@@ -2,17 +2,20 @@
 
 PaaS application management portal for workloads deployed by the CI/CD and GitOps project.
 
-## Day 13 Scope
+## Current Scope
 
-Day 13 creates the runnable portal foundation:
+The portal currently provides the Day 13 runtime foundation and the Day 14 read-only application catalog:
 
 - Spring Boot API on port `8081`.
 - React/Vite portal on port `3001`.
 - MariaDB local database on host port `3307`.
 - API health check at `/api/health`.
-- Portal shell that verifies API connectivity.
+- Application catalog API at `/api/applications`.
+- Seeded `platform-app` metadata for the `dev` environment.
+- Portal UI for catalog list and application detail.
+- Local CORS allowance for the portal frontend on `localhost:3001`.
 
-Application catalog, ArgoCD status, Kubernetes runtime status, deployment requests, audit logs, and Prometheus metrics are added in later days.
+ArgoCD status, Kubernetes runtime status, deployment requests, audit logs, and Prometheus metrics are added in later days.
 
 ## Local Run
 
@@ -31,6 +34,7 @@ Verify API:
 ```bash
 curl http://localhost:8081/api/health
 curl http://localhost:8081/actuator/health
+curl http://localhost:8081/api/applications
 ```
 
 Stop:
