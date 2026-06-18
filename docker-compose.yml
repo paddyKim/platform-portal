@@ -1,0 +1,44 @@
+services:
+  portal-mariadb:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: platform_portal
+      MARIADB_USER: portal
+      MARIADB_PASSWORD: portal
+      MARIADB_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - portal-mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  portal-backend:
+    build:
+      context: ./backend
+    environment:
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:mariadb://portal-mariadb:3306/platform_portal
+      SPRING_DATASOURCE_USERNAME: portal
+      SPRING_DATASOURCE_PASSWORD: portal
+    ports:
+      - "8081:8081"
+    depends_on:
+      portal-mariadb:
+        condition: service_healthy
+
+  portal-frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8081
+    ports:
+      - "3001:80"
+    depends_on:
+      - portal-backend
+
+volumes:
+  portal-mariadb-data:
