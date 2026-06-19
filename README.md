@@ -1,10 +1,10 @@
 # platform-portal
 
-PaaS application management portal for workloads deployed by the CI/CD and GitOps project.
+CI/CD portal and application management layer for workloads built, deployed, and operated through the platform project.
 
 ## Current Scope
 
-The portal currently provides the Day 13 runtime foundation, the Day 14 read-only application catalog, the Day 15 ArgoCD status view, and the Day 16 Kubernetes runtime view:
+The portal currently provides the Day 13 runtime foundation, the Day 14 read-only application catalog, the Day 15 ArgoCD status view, the Day 16 Kubernetes runtime view, and the Day 17 CI/CD request foundation:
 
 - Spring Boot API on port `8081`.
 - React/Vite portal on port `3001`.
@@ -16,8 +16,10 @@ The portal currently provides the Day 13 runtime foundation, the Day 14 read-onl
 - Local CORS allowance for the portal frontend on `localhost:3001`.
 - ArgoCD status API and UI panel for sync, health, operation phase, reconciled time, and image summary.
 - Kubernetes runtime API and UI panel for Deployment readiness, Pod status, restart counts, Service metadata, and recent Events.
+- CI/CD request API and UI for build/deploy/replica requests.
+- Audit event API and UI for portal-owned request history.
 
-Deployment requests, audit logs, and Prometheus metrics are added in later days.
+Actual CI/CD execution is delegated to the future backend-only `platform-cicd` service. Kafka integration and Prometheus metrics are added in later days.
 
 ## Local Run
 
@@ -55,6 +57,8 @@ curl http://localhost:8081/actuator/health
 curl http://localhost:8081/api/applications
 curl http://localhost:8081/api/applications/1/environments/dev/status
 curl http://localhost:8081/api/applications/1/environments/dev/runtime
+curl http://localhost:8081/api/cicd/requests
+curl http://localhost:8081/api/audit-events
 ```
 
 Stop:

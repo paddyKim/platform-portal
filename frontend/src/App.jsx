@@ -3,8 +3,8 @@ import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
 
-async function fetchJson(path) {
-  const response = await fetch(`${API_BASE_URL}${path}`)
+async function fetchJson(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, options)
   if (!response.ok) {
     throw new Error(`API returned ${response.status}`)
   }
@@ -20,10 +20,21 @@ function App() {
   const [applicationDetail, setApplicationDetail] = useState(null)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
+  const [cicdRequests, setCicdRequests] = useState([])
+  const [auditEvents, setAuditEvents] = useState([])
+  const [cicdForm, setCicdForm] = useState({
+    environment: '',
+    componentId: '',
+    requestType: 'BUILD_IMAGE',
+    requestedValue: '',
+    requestedBy: 'platform-operator',
+  })
   const [catalogState, setCatalogState] = useState('loading')
   const [detailState, setDetailState] = useState('idle')
   const [statusState, setStatusState] = useState('idle')
   const [runtimeState, setRuntimeState] = useState('idle')
+  const [cicdState, setCicdState] = useState('idle')
+  const [cicdMessage, setCicdMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -120,6 +131,38 @@ function App() {
   }, [selectedApplicationId])
 
   useEffect(() => {
+    let ignore = false
+
+    async function loadCicdData() {
+      setCicdState('loading')
+
+      try {
+        const [requests, events] = await Promise.all([
+          fetchJson('/api/cicd/requests'),
+          fetchJson('/api/audit-events'),
+        ])
+
+        if (!ignore) {
+          setCicdRequests(requests)
+          setAuditEvents(events)
+          setCicdState('ready')
+        }
+      } catch (error) {
+        if (!ignore) {
+          setCicdMessage(error.message)
+          setCicdState('error')
+        }
+      }
+    }
+
+    loadCicdData()
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!applicationDetail) {
       setEnvironmentStatuses({})
       setStatusState('idle')
@@ -170,6 +213,24 @@ function App() {
     return () => {
       ignore = true
     }
+  }, [applicationDetail])
+
+  useEffect(() => {
+    if (!applicationDetail) {
+      setCicdForm((current) => ({
+        ...current,
+        environment: '',
+        componentId: '',
+      }))
+      return
+    }
+
+    const environment = applicationDetail.environments[0]
+    setCicdForm((current) => ({
+      ...current,
+      environment: environment?.environment ?? '',
+      componentId: environment?.components[0]?.id?.toString() ?? '',
+    }))
   }, [applicationDetail])
 
   useEffect(() => {
@@ -232,6 +293,52 @@ function App() {
     [applications, selectedApplicationId],
   )
 
+  async function reloadCicdData() {
+    const [requests, events] = await Promise.all([
+      fetchJson('/api/cicd/requests'),
+      fetchJson('/api/audit-events'),
+    ])
+    setCicdRequests(requests)
+    setAuditEvents(events)
+  }
+
+  async function handleCreateCicdRequest(event) {
+    event.preventDefault()
+    if (!applicationDetail) {
+      return
+    }
+
+    setCicdState('submitting')
+    setCicdMessage('')
+
+    try {
+      await fetchJson('/api/cicd/requests', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          applicationId: applicationDetail.id,
+          environment: cicdForm.environment,
+          componentId: Number(cicdForm.componentId),
+          requestType: cicdForm.requestType,
+          requestedValue: cicdForm.requestedValue,
+          requestedBy: cicdForm.requestedBy,
+        }),
+      })
+      setCicdForm((current) => ({
+        ...current,
+        requestedValue: '',
+      }))
+      await reloadCicdData()
+      setCicdMessage('CI/CD request recorded')
+      setCicdState('ready')
+    } catch (error) {
+      setCicdMessage(error.message)
+      setCicdState('error')
+    }
+  }
+
   return (
     <main className="portal-shell">
       <header className="topbar">
@@ -249,9 +356,9 @@ function App() {
         <div>
           <h2>Application Catalog</h2>
           <p>
-            Registered workloads and environment metadata managed by the portal.
-            Live ArgoCD and Kubernetes runtime status are shown for managed
-            environments. Prometheus metrics will be added in a later milestone.
+            Registered workloads, CI/CD requests, and runtime state managed by
+            the portal. Build and deployment execution will be delegated to the
+            platform-cicd backend.
           </p>
         </div>
         <dl className="runtime-facts">
@@ -324,6 +431,17 @@ function App() {
                 {renderMetadata('Selected', selectedApplication?.name || applicationDetail.name)}
               </div>
 
+              {renderCicdControlPanel(
+                applicationDetail,
+                cicdForm,
+                setCicdForm,
+                handleCreateCicdRequest,
+                cicdRequests,
+                auditEvents,
+                cicdState,
+                cicdMessage,
+              )}
+
               <div className="environment-stack">
                 {applicationDetail.environments.map((environment) => (
                   <article className="environment-card" key={environment.id}>
@@ -373,6 +491,177 @@ function App() {
       </section>
     </main>
   )
+}
+
+function renderCicdControlPanel(
+  applicationDetail,
+  cicdForm,
+  setCicdForm,
+  handleCreateCicdRequest,
+  cicdRequests,
+  auditEvents,
+  cicdState,
+  cicdMessage,
+) {
+  const selectedEnvironment = applicationDetail.environments.find(
+    (environment) => environment.environment === cicdForm.environment,
+  ) ?? applicationDetail.environments[0]
+  const applicationRequests = cicdRequests.filter((request) => request.applicationId === applicationDetail.id)
+  const applicationAuditEvents = auditEvents.filter((event) => (
+    applicationRequests.some((request) => request.id === event.cicdRequestId)
+  ))
+
+  return (
+    <section className="cicd-panel" aria-label="CI/CD requests">
+      <div className="status-heading">
+        <div>
+          <p className="eyebrow">CI/CD Control</p>
+          <h3>Requests and audit</h3>
+        </div>
+        <span className="connection-badge">PORTAL OWNED</span>
+      </div>
+
+      <form className="cicd-form" onSubmit={handleCreateCicdRequest}>
+        <label>
+          <span>Environment</span>
+          <select
+            onChange={(event) => {
+              const environment = applicationDetail.environments.find(
+                (candidate) => candidate.environment === event.target.value,
+              )
+              setCicdForm((current) => ({
+                ...current,
+                environment: event.target.value,
+                componentId: environment?.components[0]?.id?.toString() ?? '',
+              }))
+            }}
+            value={cicdForm.environment}
+          >
+            {applicationDetail.environments.map((environment) => (
+              <option key={environment.id} value={environment.environment}>
+                {environment.environment}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>Component</span>
+          <select
+            onChange={(event) => setCicdForm((current) => ({ ...current, componentId: event.target.value }))}
+            value={cicdForm.componentId}
+          >
+            {(selectedEnvironment?.components ?? []).map((component) => (
+              <option key={component.id} value={component.id}>
+                {component.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>Request type</span>
+          <select
+            onChange={(event) => setCicdForm((current) => ({ ...current, requestType: event.target.value }))}
+            value={cicdForm.requestType}
+          >
+            <option value="BUILD_IMAGE">Build image</option>
+            <option value="DEPLOY_IMAGE">Deploy image</option>
+            <option value="CHANGE_REPLICAS">Change replicas</option>
+          </select>
+        </label>
+
+        <label>
+          <span>Requested value</span>
+          <input
+            onChange={(event) => setCicdForm((current) => ({ ...current, requestedValue: event.target.value }))}
+            placeholder={requestValuePlaceholder(cicdForm.requestType)}
+            required
+            type="text"
+            value={cicdForm.requestedValue}
+          />
+        </label>
+
+        <label>
+          <span>Requested by</span>
+          <input
+            onChange={(event) => setCicdForm((current) => ({ ...current, requestedBy: event.target.value }))}
+            required
+            type="text"
+            value={cicdForm.requestedBy}
+          />
+        </label>
+
+        <button disabled={cicdState === 'submitting' || !cicdForm.componentId} type="submit">
+          Record request
+        </button>
+      </form>
+
+      {cicdMessage && (
+        <p className={cicdState === 'error' ? 'status-message' : 'success-message'}>{cicdMessage}</p>
+      )}
+
+      <div className="cicd-columns">
+        <div className="request-list">
+          <div className="panel-heading">
+            <h4>Requests</h4>
+            <span>{applicationRequests.length}</span>
+          </div>
+          {applicationRequests.length === 0 && <p className="muted">No CI/CD requests recorded.</p>}
+          {applicationRequests.map((request) => (
+            <article className="request-card" key={request.id}>
+              <div>
+                <strong>{request.requestType}</strong>
+                <small>{request.componentName} / {request.environment}</small>
+              </div>
+              <code>{request.requestedValue}</code>
+              <span className={`status-value ${cicdStatusTone(request.status)}`}>{request.status}</span>
+            </article>
+          ))}
+        </div>
+
+        <div className="request-list">
+          <div className="panel-heading">
+            <h4>Audit events</h4>
+            <span>{applicationAuditEvents.length}</span>
+          </div>
+          {applicationAuditEvents.length === 0 && <p className="muted">No audit events recorded.</p>}
+          {applicationAuditEvents.map((event) => (
+            <article className="request-card" key={event.id}>
+              <div>
+                <strong>{event.eventType}</strong>
+                <small>{new Date(event.createdAt).toLocaleString()}</small>
+              </div>
+              <p>{event.description}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function requestValuePlaceholder(requestType) {
+  if (requestType === 'CHANGE_REPLICAS') {
+    return '2'
+  }
+  if (requestType === 'DEPLOY_IMAGE') {
+    return '1fd847c'
+  }
+  return 'main'
+}
+
+function cicdStatusTone(status) {
+  if (['SUCCEEDED'].includes(status)) {
+    return 'good'
+  }
+  if (['REQUESTED', 'DISPATCHED', 'RUNNING'].includes(status)) {
+    return 'pending'
+  }
+  if (['FAILED'].includes(status)) {
+    return 'bad'
+  }
+  return 'neutral'
 }
 
 function renderMetadata(label, value) {
