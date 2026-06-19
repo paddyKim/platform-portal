@@ -20,6 +20,22 @@ Kubernetes runtime status, deployment requests, audit logs, and Prometheus metri
 
 ## Local Run
 
+Prepare a local-only kubeconfig copy if the backend should read ArgoCD status from Docker Compose:
+
+```bash
+mkdir -p .local/kube
+cp ~/.kube/config .local/kube/config
+```
+
+For Colima/k3s, update `.local/kube/config` so the active cluster uses the host-reachable API server:
+
+```text
+server: https://host.docker.internal:<k3s-api-port>
+insecure-skip-tls-verify: true
+```
+
+Do not commit `.local/`; it contains local credentials.
+
 ```bash
 docker compose up --build -d
 ```

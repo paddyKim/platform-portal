@@ -24,6 +24,9 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mariadb://portal-mariadb:3306/platform_portal
       SPRING_DATASOURCE_USERNAME: portal
       SPRING_DATASOURCE_PASSWORD: portal
+      KUBECONFIG: /root/.kube/config
+    volumes:
+      - ./.local/kube/config:/root/.kube/config:ro
     ports:
       - "8081:8081"
     depends_on:
