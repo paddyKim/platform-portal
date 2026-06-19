@@ -19,7 +19,7 @@ The portal currently provides the Day 13 runtime foundation, the Day 14 read-onl
 - CI/CD request API and UI for build/deploy/replica requests.
 - Audit event API and UI for portal-owned request history.
 
-Actual CI/CD execution is delegated to the future backend-only `platform-cicd` service. Kafka integration and Prometheus metrics are added in later days.
+Actual CI/CD execution is delegated to the future backend-only `platform-cicd` service. The first integration path is synchronous HTTP; message queue based asynchronous dispatch is deferred. Prometheus metrics are added in later days.
 
 ## Local Run
 

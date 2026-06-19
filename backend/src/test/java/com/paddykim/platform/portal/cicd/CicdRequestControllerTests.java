@@ -55,10 +55,10 @@ class CicdRequestControllerTests {
                 .andExpect(jsonPath("$.environment", is("dev")))
                 .andExpect(jsonPath("$.componentName", is("platform-api")))
                 .andExpect(jsonPath("$.requestType", is("BUILD_IMAGE")))
-                .andExpect(jsonPath("$.status", is("REQUESTED")))
+                .andExpect(jsonPath("$.status", is("QUEUED")))
                 .andExpect(jsonPath("$.requestedValue", is("main")))
                 .andExpect(jsonPath("$.requestedBy", is("platform-operator")))
-                .andExpect(jsonPath("$.messageTopic", is("platform.cicd.requests")))
+                .andExpect(jsonPath("$.dispatchTarget", is("platform-cicd-http")))
                 .andExpect(jsonPath("$.messageKey", is("platform-app:dev:platform-api")));
 
         mockMvc.perform(get("/api/audit-events"))
@@ -94,7 +94,7 @@ class CicdRequestControllerTests {
         mockMvc.perform(get("/api/cicd/requests/{id}", requestId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id", is(requestId.intValue())))
-                .andExpect(jsonPath("$.status", is("REQUESTED")));
+                .andExpect(jsonPath("$.status", is("QUEUED")));
     }
 
     @Test

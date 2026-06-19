@@ -51,7 +51,7 @@ public class CicdRequest {
     private String requestedBy;
 
     @Column(name = "message_topic", nullable = false)
-    private String messageTopic;
+    private String dispatchTarget;
 
     @Column(name = "message_key", nullable = false)
     private String messageKey;
@@ -75,19 +75,19 @@ public class CicdRequest {
             CicdRequestType requestType,
             String requestedValue,
             String requestedBy,
-            String messageTopic,
+            String dispatchTarget,
             String messageKey
     ) {
         this.application = application;
         this.environment = environment;
         this.component = component;
         this.requestType = requestType;
-        this.status = CicdRequestStatus.REQUESTED;
+        this.status = CicdRequestStatus.QUEUED;
         this.requestedValue = requestedValue;
         this.requestedBy = requestedBy;
-        this.messageTopic = messageTopic;
+        this.dispatchTarget = dispatchTarget;
         this.messageKey = messageKey;
-        this.statusMessage = "Request recorded; waiting for platform-cicd dispatch";
+        this.statusMessage = "Queued in portal; waiting for synchronous dispatch to platform-cicd";
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -124,8 +124,8 @@ public class CicdRequest {
         return requestedBy;
     }
 
-    public String getMessageTopic() {
-        return messageTopic;
+    public String getDispatchTarget() {
+        return dispatchTarget;
     }
 
     public String getMessageKey() {

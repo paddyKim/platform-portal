@@ -655,7 +655,7 @@ function cicdStatusTone(status) {
   if (['SUCCEEDED'].includes(status)) {
     return 'good'
   }
-  if (['REQUESTED', 'DISPATCHED', 'RUNNING'].includes(status)) {
+  if (['QUEUED', 'REQUESTED', 'RUNNING'].includes(status)) {
     return 'pending'
   }
   if (['FAILED'].includes(status)) {

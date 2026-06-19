@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class CicdRequestService {
 
-    private static final String REQUEST_TOPIC = "platform.cicd.requests";
+    private static final String DISPATCH_TARGET = "platform-cicd-http";
 
     private final ApplicationRepository applicationRepository;
     private final CicdRequestRepository cicdRequestRepository;
@@ -43,7 +43,7 @@ public class CicdRequestService {
                 request.requestType(),
                 request.requestedValue().trim(),
                 request.requestedBy().trim(),
-                REQUEST_TOPIC,
+                DISPATCH_TARGET,
                 messageKey(application, environment, component)
         ));
 
