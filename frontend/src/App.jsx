@@ -18,8 +18,10 @@ function App() {
   const [applications, setApplications] = useState([])
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [applicationDetail, setApplicationDetail] = useState(null)
+  const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [catalogState, setCatalogState] = useState('loading')
   const [detailState, setDetailState] = useState('idle')
+  const [statusState, setStatusState] = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -79,6 +81,7 @@ function App() {
   useEffect(() => {
     if (!selectedApplicationId) {
       setApplicationDetail(null)
+      setEnvironmentStatuses({})
       setDetailState('idle')
       return
     }
@@ -93,6 +96,7 @@ function App() {
         const data = await fetchJson(`/api/applications/${selectedApplicationId}`)
         if (!ignore) {
           setApplicationDetail(data)
+          setEnvironmentStatuses({})
           setDetailState('ready')
         }
       } catch (error) {
@@ -110,6 +114,59 @@ function App() {
       ignore = true
     }
   }, [selectedApplicationId])
+
+  useEffect(() => {
+    if (!applicationDetail) {
+      setEnvironmentStatuses({})
+      setStatusState('idle')
+      return
+    }
+
+    let ignore = false
+
+    async function loadEnvironmentStatuses() {
+      setStatusState('loading')
+
+      const statusEntries = await Promise.all(
+        applicationDetail.environments.map(async (environment) => {
+          try {
+            const status = await fetchJson(
+              `/api/applications/${applicationDetail.id}/environments/${environment.environment}/status`,
+            )
+            return [environment.environment, status]
+          } catch (error) {
+            return [
+              environment.environment,
+              {
+                applicationId: applicationDetail.id,
+                applicationName: applicationDetail.name,
+                environment: environment.environment,
+                argocdApplicationName: environment.argocdApplicationName,
+                connectionStatus: 'UNAVAILABLE',
+                syncStatus: 'Unknown',
+                healthStatus: 'Unknown',
+                operationPhase: 'Unknown',
+                reconciledAt: null,
+                images: [],
+                message: error.message,
+              },
+            ]
+          }
+        }),
+      )
+
+      if (!ignore) {
+        setEnvironmentStatuses(Object.fromEntries(statusEntries))
+        setStatusState('ready')
+      }
+    }
+
+    loadEnvironmentStatuses()
+
+    return () => {
+      ignore = true
+    }
+  }, [applicationDetail])
 
   const selectedApplication = useMemo(
     () => applications.find((application) => application.id === selectedApplicationId),
@@ -226,6 +283,8 @@ function App() {
                       {renderMetadata('Service URL', environment.serviceUrl)}
                     </div>
 
+                    {renderArgoCdStatus(environmentStatuses[environment.environment], statusState)}
+
                     <div className="component-table" role="table" aria-label={`${environment.environment} components`}>
                       <div className="component-row component-head" role="row">
                         <span role="columnheader">Component</span>
@@ -262,6 +321,74 @@ function renderMetadata(label, value) {
       <strong>{value}</strong>
     </div>
   )
+}
+
+function renderArgoCdStatus(status, statusState) {
+  if (statusState === 'loading' || !status) {
+    return (
+      <section className="status-panel" aria-label="ArgoCD status">
+        <p className="muted">Loading ArgoCD status...</p>
+      </section>
+    )
+  }
+
+  const isUnavailable = status.connectionStatus !== 'AVAILABLE'
+
+  return (
+    <section className={isUnavailable ? 'status-panel unavailable' : 'status-panel'} aria-label="ArgoCD status">
+      <div className="status-heading">
+        <div>
+          <p className="eyebrow">ArgoCD Status</p>
+          <h4>{status.argocdApplicationName}</h4>
+        </div>
+        <span className={isUnavailable ? 'connection-badge disconnected' : 'connection-badge'}>
+          {status.connectionStatus}
+        </span>
+      </div>
+
+      <div className="status-grid">
+        {renderStatusMetric('Sync', status.syncStatus, statusTone(status.syncStatus))}
+        {renderStatusMetric('Health', status.healthStatus, statusTone(status.healthStatus))}
+        {renderStatusMetric('Operation', status.operationPhase, statusTone(status.operationPhase))}
+        {renderStatusMetric('Reconciled', status.reconciledAt ? new Date(status.reconciledAt).toLocaleString() : 'Unknown')}
+      </div>
+
+      {isUnavailable && <p className="status-message">{status.message || 'ArgoCD status is unavailable.'}</p>}
+
+      {status.images.length > 0 && (
+        <div className="image-list" aria-label="ArgoCD image summary">
+          {status.images.map((image) => (
+            <code key={image}>{image}</code>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function renderStatusMetric(label, value, tone = 'neutral') {
+  return (
+    <div className="status-metric" key={label}>
+      <span>{label}</span>
+      <strong className={`status-value ${tone}`}>{value}</strong>
+    </div>
+  )
+}
+
+function statusTone(value) {
+  if (['Synced', 'Healthy', 'Succeeded'].includes(value)) {
+    return 'good'
+  }
+
+  if (['OutOfSync', 'Progressing', 'Running'].includes(value)) {
+    return 'pending'
+  }
+
+  if (['Degraded', 'Failed', 'Error', 'Missing'].includes(value)) {
+    return 'bad'
+  }
+
+  return 'neutral'
 }
 
 export default App
