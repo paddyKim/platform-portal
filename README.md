@@ -4,7 +4,7 @@ PaaS application management portal for workloads deployed by the CI/CD and GitOp
 
 ## Current Scope
 
-The portal currently provides the Day 13 runtime foundation, the Day 14 read-only application catalog, and the Day 15 ArgoCD status view:
+The portal currently provides the Day 13 runtime foundation, the Day 14 read-only application catalog, the Day 15 ArgoCD status view, and the Day 16 Kubernetes runtime view:
 
 - Spring Boot API on port `8081`.
 - React/Vite portal on port `3001`.
@@ -15,8 +15,9 @@ The portal currently provides the Day 13 runtime foundation, the Day 14 read-onl
 - Portal UI for catalog list and application detail.
 - Local CORS allowance for the portal frontend on `localhost:3001`.
 - ArgoCD status API and UI panel for sync, health, operation phase, reconciled time, and image summary.
+- Kubernetes runtime API and UI panel for Deployment readiness, Pod status, restart counts, Service metadata, and recent Events.
 
-Kubernetes runtime status, deployment requests, audit logs, and Prometheus metrics are added in later days.
+Deployment requests, audit logs, and Prometheus metrics are added in later days.
 
 ## Local Run
 
@@ -53,6 +54,7 @@ curl http://localhost:8081/api/health
 curl http://localhost:8081/actuator/health
 curl http://localhost:8081/api/applications
 curl http://localhost:8081/api/applications/1/environments/dev/status
+curl http://localhost:8081/api/applications/1/environments/dev/runtime
 ```
 
 Stop:

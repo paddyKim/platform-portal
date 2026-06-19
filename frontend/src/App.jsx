@@ -19,9 +19,11 @@ function App() {
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [applicationDetail, setApplicationDetail] = useState(null)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
+  const [runtimeStatuses, setRuntimeStatuses] = useState({})
   const [catalogState, setCatalogState] = useState('loading')
   const [detailState, setDetailState] = useState('idle')
   const [statusState, setStatusState] = useState('idle')
+  const [runtimeState, setRuntimeState] = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -82,6 +84,7 @@ function App() {
     if (!selectedApplicationId) {
       setApplicationDetail(null)
       setEnvironmentStatuses({})
+      setRuntimeStatuses({})
       setDetailState('idle')
       return
     }
@@ -97,6 +100,7 @@ function App() {
         if (!ignore) {
           setApplicationDetail(data)
           setEnvironmentStatuses({})
+          setRuntimeStatuses({})
           setDetailState('ready')
         }
       } catch (error) {
@@ -168,6 +172,61 @@ function App() {
     }
   }, [applicationDetail])
 
+  useEffect(() => {
+    if (!applicationDetail) {
+      setRuntimeStatuses({})
+      setRuntimeState('idle')
+      return
+    }
+
+    let ignore = false
+
+    async function loadRuntimeStatuses() {
+      setRuntimeState('loading')
+
+      const runtimeEntries = await Promise.all(
+        applicationDetail.environments.map(async (environment) => {
+          try {
+            const runtime = await fetchJson(
+              `/api/applications/${applicationDetail.id}/environments/${environment.environment}/runtime`,
+            )
+            return [environment.environment, runtime]
+          } catch (error) {
+            return [
+              environment.environment,
+              {
+                applicationId: applicationDetail.id,
+                applicationName: applicationDetail.name,
+                environment: environment.environment,
+                namespace: environment.namespace,
+                connectionStatus: 'UNAVAILABLE',
+                summary: {
+                  desiredReplicas: 0,
+                  readyReplicas: 0,
+                  availableReplicas: 0,
+                  warningEvents: 0,
+                },
+                components: [],
+                message: error.message,
+              },
+            ]
+          }
+        }),
+      )
+
+      if (!ignore) {
+        setRuntimeStatuses(Object.fromEntries(runtimeEntries))
+        setRuntimeState('ready')
+      }
+    }
+
+    loadRuntimeStatuses()
+
+    return () => {
+      ignore = true
+    }
+  }, [applicationDetail])
+
   const selectedApplication = useMemo(
     () => applications.find((application) => application.id === selectedApplicationId),
     [applications, selectedApplicationId],
@@ -191,8 +250,8 @@ function App() {
           <h2>Application Catalog</h2>
           <p>
             Registered workloads and environment metadata managed by the portal.
-            Live ArgoCD, Kubernetes, and Prometheus status will be added in later
-            milestones.
+            Live ArgoCD and Kubernetes runtime status are shown for managed
+            environments. Prometheus metrics will be added in a later milestone.
           </p>
         </div>
         <dl className="runtime-facts">
@@ -285,6 +344,8 @@ function App() {
 
                     {renderArgoCdStatus(environmentStatuses[environment.environment], statusState)}
 
+                    {renderRuntimeStatus(runtimeStatuses[environment.environment], runtimeState)}
+
                     <div className="component-table" role="table" aria-label={`${environment.environment} components`}>
                       <div className="component-row component-head" role="row">
                         <span role="columnheader">Component</span>
@@ -320,6 +381,85 @@ function renderMetadata(label, value) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  )
+}
+
+function renderRuntimeStatus(runtime, runtimeState) {
+  if (runtimeState === 'loading' || !runtime) {
+    return (
+      <section className="status-panel" aria-label="Kubernetes runtime status">
+        <p className="muted">Loading Kubernetes runtime...</p>
+      </section>
+    )
+  }
+
+  const isUnavailable = runtime.connectionStatus !== 'AVAILABLE'
+
+  return (
+    <section className={isUnavailable ? 'status-panel unavailable' : 'status-panel'} aria-label="Kubernetes runtime status">
+      <div className="status-heading">
+        <div>
+          <p className="eyebrow">Kubernetes Runtime</p>
+          <h4>{runtime.namespace}</h4>
+        </div>
+        <span className={isUnavailable ? 'connection-badge disconnected' : 'connection-badge'}>
+          {runtime.connectionStatus}
+        </span>
+      </div>
+
+      <div className="status-grid">
+        {renderStatusMetric(
+          'Ready',
+          `${runtime.summary.readyReplicas}/${runtime.summary.desiredReplicas}`,
+          runtime.summary.readyReplicas === runtime.summary.desiredReplicas ? 'good' : 'pending',
+        )}
+        {renderStatusMetric('Available', runtime.summary.availableReplicas, 'neutral')}
+        {renderStatusMetric(
+          'Warnings',
+          runtime.summary.warningEvents,
+          runtime.summary.warningEvents > 0 ? 'bad' : 'good',
+        )}
+        {renderStatusMetric('Components', runtime.components.length, 'neutral')}
+      </div>
+
+      {isUnavailable && <p className="status-message">{runtime.message || 'Kubernetes runtime is unavailable.'}</p>}
+
+      {runtime.components.length > 0 && (
+        <div className="runtime-table" role="table" aria-label={`${runtime.environment} Kubernetes runtime`}>
+          <div className="runtime-row runtime-head" role="row">
+            <span role="columnheader">Component</span>
+            <span role="columnheader">Status</span>
+            <span role="columnheader">Deployment</span>
+            <span role="columnheader">Pods</span>
+            <span role="columnheader">Restarts</span>
+            <span role="columnheader">Service</span>
+            <span role="columnheader">Recent event</span>
+          </div>
+
+          {runtime.components.map((component) => (
+            <div className="runtime-row" key={component.componentId} role="row">
+              <span role="cell">
+                <strong>{component.componentName}</strong>
+                <small>{component.kind}</small>
+              </span>
+              <span role="cell">
+                <strong className={`status-value ${statusTone(component.status)}`}>{component.status}</strong>
+              </span>
+              <span role="cell">
+                {component.readyReplicas}/{component.desiredReplicas} ready
+              </span>
+              <span role="cell">{renderPodSummary(component.pods)}</span>
+              <span role="cell">{component.restartCount}</span>
+              <span role="cell">
+                <strong>{component.serviceName}</strong>
+                <small>{component.serviceType} {component.clusterIp}</small>
+              </span>
+              <span role="cell">{renderRecentEvent(component)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   )
 }
 
@@ -376,19 +516,36 @@ function renderStatusMetric(label, value, tone = 'neutral') {
 }
 
 function statusTone(value) {
-  if (['Synced', 'Healthy', 'Succeeded'].includes(value)) {
+  if (['Synced', 'Healthy', 'Succeeded', 'READY'].includes(value)) {
     return 'good'
   }
 
-  if (['OutOfSync', 'Progressing', 'Running'].includes(value)) {
+  if (['OutOfSync', 'Progressing', 'Running', 'PROGRESSING', 'WARNING'].includes(value)) {
     return 'pending'
   }
 
-  if (['Degraded', 'Failed', 'Error', 'Missing'].includes(value)) {
+  if (['Degraded', 'Failed', 'Error', 'Missing', 'MISSING'].includes(value)) {
     return 'bad'
   }
 
   return 'neutral'
+}
+
+function renderPodSummary(pods) {
+  if (pods.length === 0) {
+    return 'No pods'
+  }
+
+  return pods.map((pod) => `${pod.name} ${pod.readyContainers}/${pod.totalContainers} ${pod.phase}`).join(', ')
+}
+
+function renderRecentEvent(component) {
+  if (component.recentEvents.length === 0) {
+    return component.message || 'No recent events'
+  }
+
+  const event = component.recentEvents[0]
+  return `${event.type} ${event.reason}: ${event.message}`
 }
 
 export default App

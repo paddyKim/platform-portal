@@ -424,6 +424,49 @@ h4 {
   text-transform: uppercase;
 }
 
+.runtime-table {
+  display: grid;
+  overflow-x: auto;
+  border: 1px solid #e1e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.runtime-row {
+  display: grid;
+  grid-template-columns: 1.1fr 0.8fr 0.9fr minmax(220px, 1.5fr) 0.7fr 1.1fr minmax(260px, 1.8fr);
+  min-width: 1120px;
+  border-top: 1px solid #e1e7eb;
+}
+
+.runtime-row:first-child {
+  border-top: 0;
+}
+
+.runtime-row span {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px;
+  color: #24333b;
+  overflow-wrap: anywhere;
+}
+
+.runtime-row small {
+  color: #60737d;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.runtime-head span {
+  display: block;
+  background: #f8fafb;
+  color: #60737d;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 .muted {
   margin-bottom: 0;
   color: #60737d;
