@@ -1,8 +1,8 @@
 package com.paddykim.platform.portal.cicd;
 
 public enum CicdRequestStatus {
-    QUEUED,
     REQUESTED,
+    DISPATCHED,
     RUNNING,
     SUCCEEDED,
     FAILED

@@ -82,7 +82,7 @@ public class CicdRequest {
         this.environment = environment;
         this.component = component;
         this.requestType = requestType;
-        this.status = CicdRequestStatus.QUEUED;
+        this.status = CicdRequestStatus.DISPATCHED;
         this.requestedValue = requestedValue;
         this.requestedBy = requestedBy;
         this.dispatchTarget = dispatchTarget;
