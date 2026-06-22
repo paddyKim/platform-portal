@@ -469,9 +469,9 @@ function App() {
         </button>
       </nav>
 
-      <section className="catalog-layout">
-        <aside className="catalog-panel" aria-label={activeSection === 'cicd' ? 'Source repositories' : 'Applications'}>
-          {activeSection === 'cicd' && renderSourceRepositoryPanel(
+      {activeSection === 'cicd' && (
+        <section className="cicd-workspace" aria-label="CI/CD workspace">
+          {renderSourceRepositoryPanel(
             sourceRepositories,
             sourceRepositoryState,
             sourceRepositoryMessage,
@@ -482,24 +482,12 @@ function App() {
             handleCreateSourceRepository,
           )}
 
-          {activeSection === 'apps' && renderApplicationPanel(
-            applications,
-            selectedApplicationId,
-            setSelectedApplicationId,
-            catalogState,
-          )}
-        </aside>
-
-        <section className="detail-panel" aria-label="Application detail">
-          {detailState === 'idle' && <p className="muted">Select an application.</p>}
-          {detailState === 'loading' && <p className="muted">Loading application detail...</p>}
-          {detailState === 'error' && <p className="muted">Application detail is unavailable.</p>}
-
-          {detailState === 'ready' && applicationDetail && activeSection === 'cicd' && (
-            <>
+          {detailState === 'loading' && <p className="muted">Loading CI/CD context...</p>}
+          {detailState === 'ready' && applicationDetail && (
+            <section className="detail-panel cicd-detail-panel" aria-label="CI/CD request detail">
               <header className="detail-header">
                 <div>
-                  <p className="eyebrow">CI/CD Workspace</p>
+                  <p className="eyebrow">Pipeline Requests</p>
                   <h2>{applicationDetail.name}</h2>
                   <p>
                     Build and deployment requests for the selected application.
@@ -529,10 +517,28 @@ function App() {
                 cicdState,
                 cicdMessage,
               )}
-            </>
+            </section>
           )}
+        </section>
+      )}
 
-          {detailState === 'ready' && applicationDetail && activeSection === 'apps' && (
+      {activeSection === 'apps' && (
+        <section className="catalog-layout">
+          <aside className="catalog-panel" aria-label="Applications">
+            {renderApplicationPanel(
+            applications,
+            selectedApplicationId,
+            setSelectedApplicationId,
+            catalogState,
+          )}
+          </aside>
+
+          <section className="detail-panel" aria-label="Application detail">
+            {detailState === 'idle' && <p className="muted">Select an application.</p>}
+            {detailState === 'loading' && <p className="muted">Loading application detail...</p>}
+            {detailState === 'error' && <p className="muted">Application detail is unavailable.</p>}
+
+            {detailState === 'ready' && applicationDetail && (
             <>
               <header className="detail-header">
                 <div>
@@ -601,8 +607,9 @@ function App() {
               </div>
             </>
           )}
+          </section>
         </section>
-      </section>
+      )}
     </main>
   )
 }
@@ -648,16 +655,26 @@ function renderSourceRepositoryPanel(
   handleCreateSourceRepository,
 ) {
   return (
-    <>
-      <div className="panel-heading">
-        <h3>Source Repositories</h3>
-        <button
-          className="panel-action"
-          onClick={() => setShowSourceRepositoryForm((current) => !current)}
-          type="button"
-        >
-          등록
-        </button>
+    <section className="source-repository-panel">
+      <div className="source-repository-header">
+        <div>
+          <p className="eyebrow">CI/CD Sources</p>
+          <h2>Source repositories</h2>
+          <p>
+            Repositories registered for build and deployment workflows. Each
+            source becomes the entry point for future pipeline execution.
+          </p>
+        </div>
+        <div className="source-repository-actions">
+          <span>{sourceRepositories.length} repos</span>
+          <button
+            className="panel-action"
+            onClick={() => setShowSourceRepositoryForm((current) => !current)}
+            type="button"
+          >
+            등록
+          </button>
+        </div>
       </div>
 
       {showSourceRepositoryForm && (
@@ -725,18 +742,30 @@ function renderSourceRepositoryPanel(
       <div className="source-repository-list">
         {sourceRepositories.map((repository) => (
           <article className="source-repository-card" key={repository.id}>
-            <div>
-              <strong>{repository.name}</strong>
-              <small>{repository.defaultBranch}</small>
+            <div className="source-repository-main">
+              <div>
+                <strong>{repository.name}</strong>
+                <a href={repository.repositoryUrl} rel="noreferrer" target="_blank">
+                  {repository.repositoryUrl}
+                </a>
+              </div>
+              <span className="status-value neutral">{repository.defaultBranch}</span>
             </div>
-            <a href={repository.repositoryUrl} rel="noreferrer" target="_blank">
-              {repository.repositoryUrl}
-            </a>
             <p>{repository.description}</p>
+            <div className="pipeline-lanes" aria-label={`${repository.name} pipeline stages`}>
+              <span>Source</span>
+              <span>Build</span>
+              <span>Scan</span>
+              <span>Deploy</span>
+            </div>
+            <div className="source-repository-meta">
+              <small>Registered {new Date(repository.createdAt).toLocaleString()}</small>
+              <small>Execution: platform-cicd</small>
+            </div>
           </article>
         ))}
       </div>
-    </>
+    </section>
   )
 }
 

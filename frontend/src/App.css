@@ -80,6 +80,7 @@ h4 {
 .overview,
 .notice,
 .portal-nav,
+.cicd-workspace,
 .catalog-layout {
   max-width: 1180px;
   margin-right: auto;
@@ -185,18 +186,29 @@ h4 {
   gap: 18px;
 }
 
+.cicd-workspace {
+  display: grid;
+  gap: 18px;
+}
+
 .catalog-panel,
 .detail-panel,
-.environment-card {
+.environment-card,
+.source-repository-panel {
   border: 1px solid #d7e0e5;
   border-radius: 8px;
   background: #ffffff;
 }
 
 .catalog-panel,
-.detail-panel {
+.detail-panel,
+.source-repository-panel {
   min-height: 460px;
   padding: 20px;
+}
+
+.cicd-detail-panel {
+  min-height: 0;
 }
 
 .panel-heading,
@@ -213,8 +225,8 @@ h4 {
 }
 
 .panel-action {
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 38px;
+  padding: 0 14px;
   border: 1px solid #0f6b74;
   border-radius: 8px;
   background: #0f6b74;
@@ -247,30 +259,74 @@ h4 {
 
 .source-repository-list {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 
 .source-repository-card {
   display: grid;
-  gap: 8px;
-  padding: 14px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(220px, 0.9fr) minmax(240px, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
   border: 1px solid #dbe3e8;
   border-radius: 8px;
   background: #ffffff;
 }
 
-.source-repository-card div {
+.source-repository-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e1e7eb;
+}
+
+.source-repository-header p {
+  max-width: 680px;
+  margin-bottom: 0;
+  color: #526772;
+  line-height: 1.55;
+}
+
+.source-repository-actions {
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
+  white-space: nowrap;
+}
+
+.source-repository-actions span {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #eef3f5;
+  color: #526772;
+  font-weight: 800;
+}
+
+.source-repository-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.source-repository-main div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .source-repository-card strong {
   color: #172026;
 }
 
-.source-repository-card small {
+.source-repository-meta small {
   display: inline-flex;
   min-height: 24px;
   align-items: center;
@@ -293,11 +349,37 @@ h4 {
   line-height: 1.45;
 }
 
+.source-repository-meta {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+
+.pipeline-lanes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pipeline-lanes span {
+  min-height: 28px;
+  padding: 6px 8px;
+  border: 1px solid #dbe3e8;
+  border-radius: 999px;
+  background: #f8fafb;
+  color: #526772;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-align: center;
+}
+
 .source-repo-form {
   display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: 10px;
-  margin-bottom: 14px;
-  padding: 14px;
+  align-items: end;
+  margin-bottom: 16px;
+  padding: 16px;
   border: 1px solid #dbe3e8;
   border-radius: 8px;
   background: #f8fafb;
@@ -741,8 +823,19 @@ h4 {
   .metadata-grid.compact,
   .status-grid,
   .cicd-form,
-  .cicd-columns {
+  .cicd-columns,
+  .source-repo-form,
+  .source-repository-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .source-repository-card {
+    align-items: start;
+  }
+
+  .source-repository-main,
+  .pipeline-lanes {
+    grid-column: 1 / -1;
   }
 }
 
@@ -753,7 +846,8 @@ h4 {
 
   .overview,
   .catalog-panel,
-  .detail-panel {
+  .detail-panel,
+  .source-repository-panel {
     padding: 18px;
   }
 
@@ -761,11 +855,15 @@ h4 {
   .environment-heading,
   .status-heading,
   .application-item,
-  .portal-nav {
+  .portal-nav,
+  .source-repository-header,
+  .source-repository-actions,
+  .source-repository-main {
     flex-direction: column;
   }
 
-  .portal-nav button {
+  .portal-nav button,
+  .panel-action {
     width: 100%;
   }
 
@@ -773,7 +871,14 @@ h4 {
   .metadata-grid.compact,
   .status-grid,
   .cicd-form,
-  .cicd-columns {
+  .cicd-columns,
+  .source-repo-form,
+  .source-repository-card,
+  .pipeline-lanes {
     grid-template-columns: 1fr;
+  }
+
+  .source-repository-meta {
+    justify-items: start;
   }
 }
