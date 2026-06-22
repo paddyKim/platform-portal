@@ -79,6 +79,7 @@ h4 {
 
 .overview,
 .notice,
+.portal-nav,
 .catalog-layout {
   max-width: 1180px;
   margin-right: auto;
@@ -143,6 +144,39 @@ h4 {
   border-radius: 8px;
   background: #fff6f4;
   color: #8a2f1d;
+}
+
+.portal-nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 6px;
+  border: 1px solid #d7e0e5;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.portal-nav button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #526772;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.portal-nav button:hover {
+  border-color: #dbe3e8;
+  background: #f8fafb;
+}
+
+.portal-nav button.active {
+  border-color: #0f6b74;
+  background: #0f6b74;
+  color: #ffffff;
 }
 
 .catalog-layout {
@@ -621,8 +655,13 @@ h4 {
   .detail-header,
   .environment-heading,
   .status-heading,
-  .application-item {
+  .application-item,
+  .portal-nav {
     flex-direction: column;
+  }
+
+  .portal-nav button {
+    width: 100%;
   }
 
   .metadata-grid,

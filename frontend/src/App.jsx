@@ -17,6 +17,7 @@ function App() {
   const [lastCheckedAt, setLastCheckedAt] = useState('')
   const [applications, setApplications] = useState([])
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
+  const [activeSection, setActiveSection] = useState('cicd')
   const [applicationDetail, setApplicationDetail] = useState(null)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
@@ -379,6 +380,23 @@ function App() {
         </section>
       )}
 
+      <nav className="portal-nav" aria-label="Portal sections">
+        <button
+          className={activeSection === 'cicd' ? 'active' : ''}
+          onClick={() => setActiveSection('cicd')}
+          type="button"
+        >
+          CI/CD
+        </button>
+        <button
+          className={activeSection === 'apps' ? 'active' : ''}
+          onClick={() => setActiveSection('apps')}
+          type="button"
+        >
+          App Management
+        </button>
+      </nav>
+
       <section className="catalog-layout">
         <aside className="catalog-panel" aria-label="Applications">
           <div className="panel-heading">
@@ -411,11 +429,48 @@ function App() {
           {detailState === 'loading' && <p className="muted">Loading application detail...</p>}
           {detailState === 'error' && <p className="muted">Application detail is unavailable.</p>}
 
-          {detailState === 'ready' && applicationDetail && (
+          {detailState === 'ready' && applicationDetail && activeSection === 'cicd' && (
             <>
               <header className="detail-header">
                 <div>
-                  <p className="eyebrow">Managed Application</p>
+                  <p className="eyebrow">CI/CD Workspace</p>
+                  <h2>{applicationDetail.name}</h2>
+                  <p>
+                    Build and deployment requests for the selected application.
+                    The portal records requests and audit history; execution is
+                    delegated to platform-cicd in the next integration step.
+                  </p>
+                </div>
+                <a href={applicationDetail.repositoryUrl} rel="noreferrer" target="_blank">
+                  Repository
+                </a>
+              </header>
+
+              <div className="metadata-grid compact">
+                {renderMetadata('Owner', applicationDetail.owner)}
+                {renderMetadata('Repository', applicationDetail.repositoryUrl)}
+                {renderMetadata('Selected App', selectedApplication?.name || applicationDetail.name)}
+                {renderMetadata('Request Target', 'platform-cicd')}
+              </div>
+
+              {renderCicdControlPanel(
+                applicationDetail,
+                cicdForm,
+                setCicdForm,
+                handleCreateCicdRequest,
+                cicdRequests,
+                auditEvents,
+                cicdState,
+                cicdMessage,
+              )}
+            </>
+          )}
+
+          {detailState === 'ready' && applicationDetail && activeSection === 'apps' && (
+            <>
+              <header className="detail-header">
+                <div>
+                  <p className="eyebrow">Application Management</p>
                   <h2>{applicationDetail.name}</h2>
                   <p>{applicationDetail.description}</p>
                 </div>
@@ -430,17 +485,6 @@ function App() {
                 {renderMetadata('Environments', applicationDetail.environments.length)}
                 {renderMetadata('Selected', selectedApplication?.name || applicationDetail.name)}
               </div>
-
-              {renderCicdControlPanel(
-                applicationDetail,
-                cicdForm,
-                setCicdForm,
-                handleCreateCicdRequest,
-                cicdRequests,
-                auditEvents,
-                cicdState,
-                cicdMessage,
-              )}
 
               <div className="environment-stack">
                 {applicationDetail.environments.map((environment) => (
