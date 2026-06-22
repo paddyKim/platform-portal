@@ -12,6 +12,49 @@ async function fetchJson(path, options = {}) {
   return response.json()
 }
 
+function base64ToArrayBuffer(value) {
+  const binary = window.atob(value)
+  const bytes = new Uint8Array(binary.length)
+
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return bytes.buffer
+}
+
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer)
+  let binary = ''
+
+  for (let index = 0; index < bytes.byteLength; index += 1) {
+    binary += String.fromCharCode(bytes[index])
+  }
+
+  return window.btoa(binary)
+}
+
+async function encryptSourceRepositoryCredential(accessToken) {
+  const { publicKey } = await fetchJson('/api/source-repositories/credential-public-key')
+  const key = await window.crypto.subtle.importKey(
+    'spki',
+    base64ToArrayBuffer(publicKey),
+    {
+      name: 'RSA-OAEP',
+      hash: 'SHA-256',
+    },
+    false,
+    ['encrypt'],
+  )
+  const encrypted = await window.crypto.subtle.encrypt(
+    { name: 'RSA-OAEP' },
+    key,
+    new TextEncoder().encode(accessToken),
+  )
+
+  return arrayBufferToBase64(encrypted)
+}
+
 function App() {
   const [apiStatus, setApiStatus] = useState('Checking API')
   const [lastCheckedAt, setLastCheckedAt] = useState('')
@@ -356,12 +399,22 @@ function App() {
     setSourceRepositoryMessage('')
 
     try {
+      const encryptedAccessToken = await encryptSourceRepositoryCredential(sourceRepositoryForm.accessToken)
       await fetchJson('/api/source-repositories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(sourceRepositoryForm),
+        body: JSON.stringify({
+          name: sourceRepositoryForm.name,
+          provider: sourceRepositoryForm.provider,
+          visibility: sourceRepositoryForm.visibility,
+          repositoryUrl: sourceRepositoryForm.repositoryUrl,
+          apiBaseUrl: sourceRepositoryForm.apiBaseUrl,
+          accountName: sourceRepositoryForm.accountName,
+          description: sourceRepositoryForm.description,
+          encryptedAccessToken,
+        }),
       })
       setSourceRepositoryForm({
         name: '',

@@ -21,14 +21,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class SourceRepositoryController {
 
     private final SourceRepositoryService sourceRepositoryService;
+    private final SourceRepositoryCredentialService credentialService;
 
-    public SourceRepositoryController(SourceRepositoryService sourceRepositoryService) {
+    public SourceRepositoryController(
+            SourceRepositoryService sourceRepositoryService,
+            SourceRepositoryCredentialService credentialService
+    ) {
         this.sourceRepositoryService = sourceRepositoryService;
+        this.credentialService = credentialService;
     }
 
     @GetMapping
     public List<SourceRepositoryResponse> listRepositories() {
         return sourceRepositoryService.listRepositories();
+    }
+
+    @GetMapping("/credential-public-key")
+    public CredentialPublicKeyResponse credentialPublicKey() {
+        return new CredentialPublicKeyResponse(credentialService.networkPublicKey());
     }
 
     @PostMapping
@@ -64,5 +74,8 @@ public class SourceRepositoryController {
 
         return ResponseEntity.badRequest()
                 .body(Map.of("message", message));
+    }
+
+    public record CredentialPublicKeyResponse(String publicKey) {
     }
 }

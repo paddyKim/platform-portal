@@ -9,9 +9,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class SourceRepositoryService {
 
     private final SourceRepositoryRepository sourceRepositoryRepository;
+    private final SourceRepositoryCredentialService credentialService;
 
-    public SourceRepositoryService(SourceRepositoryRepository sourceRepositoryRepository) {
+    public SourceRepositoryService(
+            SourceRepositoryRepository sourceRepositoryRepository,
+            SourceRepositoryCredentialService credentialService
+    ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
+        this.credentialService = credentialService;
     }
 
     @Transactional(readOnly = true)
@@ -29,7 +34,11 @@ public class SourceRepositoryService {
             throw new SourceRepositoryValidationException("Source repository already registered: " + repositoryUrl);
         }
 
-        String accessToken = request.accessToken().trim();
+        String accessToken = credentialService.decryptFromNetwork(request.encryptedAccessToken().trim()).trim();
+        if (accessToken.isBlank()) {
+            throw new SourceRepositoryValidationException("Source repository credential must not be blank");
+        }
+        String encryptedAccessToken = credentialService.encryptForStorage(accessToken);
 
         SourceRepository repository = sourceRepositoryRepository.save(new SourceRepository(
                 request.name().trim(),
@@ -38,7 +47,7 @@ public class SourceRepositoryService {
                 repositoryUrl,
                 request.apiBaseUrl().trim(),
                 request.accountName().trim(),
-                accessToken,
+                encryptedAccessToken,
                 "",
                 request.description().trim()
         ));

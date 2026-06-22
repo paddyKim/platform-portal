@@ -10,7 +10,7 @@ public record SourceRepositoryCreateRequest(
         @NotBlank String repositoryUrl,
         @NotBlank String apiBaseUrl,
         @NotBlank String accountName,
-        @NotBlank String accessToken,
+        @NotBlank String encryptedAccessToken,
         @NotBlank String description
 ) {
 }
