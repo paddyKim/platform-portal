@@ -29,10 +29,7 @@ public class SourceRepositoryService {
             throw new SourceRepositoryValidationException("Source repository already registered: " + repositoryUrl);
         }
 
-        String accessToken = request.accessToken() == null ? "" : request.accessToken().trim();
-        if (request.visibility() == SourceRepositoryVisibility.PRIVATE && accessToken.isBlank()) {
-            throw new SourceRepositoryValidationException("Private repository requires an access token");
-        }
+        String accessToken = request.accessToken().trim();
 
         SourceRepository repository = sourceRepositoryRepository.save(new SourceRepository(
                 request.name().trim(),

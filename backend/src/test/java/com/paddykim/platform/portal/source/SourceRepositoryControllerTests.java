@@ -40,7 +40,7 @@ class SourceRepositoryControllerTests {
     }
 
     @Test
-    void createsPublicSourceRepositoryWithoutToken() throws Exception {
+    void createsPublicSourceRepositoryWithCredential() throws Exception {
         mockMvc.perform(post("/api/source-repositories")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -51,7 +51,7 @@ class SourceRepositoryControllerTests {
                                   "repositoryUrl": "https://github.com/paddyKim/platform-app",
                                   "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
-                                  "accessToken": "",
+                                  "accessToken": "public-repo-password",
                                   "description": "Public app source repository"
                                 }
                                 """))
@@ -61,7 +61,7 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$.visibility", is("PUBLIC")))
                 .andExpect(jsonPath("$.repositoryUrl", is("https://github.com/paddyKim/platform-app")))
                 .andExpect(jsonPath("$.accountName", is("paddyKim")))
-                .andExpect(jsonPath("$.credentialConfigured", is(false)))
+                .andExpect(jsonPath("$.credentialConfigured", is(true)))
                 .andExpect(jsonPath("$.cloneCount", is(0)))
                 .andExpect(jsonPath("$.buildCount", is(0)));
     }
@@ -89,7 +89,7 @@ class SourceRepositoryControllerTests {
     }
 
     @Test
-    void rejectsPrivateRepositoryWithoutToken() throws Exception {
+    void rejectsRepositoryWithoutCredential() throws Exception {
         mockMvc.perform(post("/api/source-repositories")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -101,11 +101,11 @@ class SourceRepositoryControllerTests {
                                   "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
                                   "accessToken": "",
-                                  "description": "Private source repository"
+                                  "description": "Source repository without credential"
                                 }
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message", containsString("requires an access token")));
+                .andExpect(jsonPath("$.message", containsString("accessToken")));
     }
 
     @Test
@@ -120,7 +120,7 @@ class SourceRepositoryControllerTests {
                                   "repositoryUrl": "https://github.com/paddyKim/platform-app",
                                   "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
-                                  "accessToken": "",
+                                  "accessToken": "public-repo-password",
                                   "description": "Duplicate source repository"
                                 }
                                 """))
@@ -136,7 +136,7 @@ class SourceRepositoryControllerTests {
                                   "repositoryUrl": "https://github.com/paddyKim/platform-app",
                                   "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
-                                  "accessToken": "",
+                                  "accessToken": "public-repo-password",
                                   "description": "Duplicate source repository"
                                 }
                                 """))
@@ -156,7 +156,7 @@ class SourceRepositoryControllerTests {
                                   "repositoryUrl": "https://github.com/paddyKim/delete-me",
                                   "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
-                                  "accessToken": "",
+                                  "accessToken": "public-repo-password",
                                   "description": "Repository to delete"
                                 }
                                 """))

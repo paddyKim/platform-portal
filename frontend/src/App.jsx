@@ -690,8 +690,7 @@ function renderSourceRepositoryPanel(
   handleDeleteSourceRepository,
 ) {
   const isGitLab = sourceRepositoryForm.provider === 'GITLAB'
-  const isPrivate = sourceRepositoryForm.visibility === 'PRIVATE'
-  const tokenLabel = isGitLab ? 'GitLab access token' : 'GitHub access token'
+  const tokenLabel = isGitLab ? 'GitLab password / access token' : 'GitHub password / access token'
   const apiBaseLabel = isGitLab ? 'GitLab API URL' : 'GitHub API URL'
 
   return (
@@ -748,7 +747,6 @@ function renderSourceRepositoryPanel(
               onChange={(event) => setSourceRepositoryForm((current) => ({
                 ...current,
                 visibility: event.target.value,
-                accessToken: event.target.value === 'PUBLIC' ? '' : current.accessToken,
               }))}
               value={sourceRepositoryForm.visibility}
             >
@@ -801,20 +799,18 @@ function renderSourceRepositoryPanel(
               value={sourceRepositoryForm.accountName}
             />
           </label>
-          {isPrivate && (
-            <label className="wide-field">
-              <span>{tokenLabel}</span>
-              <input
-                onChange={(event) => setSourceRepositoryForm((current) => ({
-                  ...current,
-                  accessToken: event.target.value,
-                }))}
-                required
-                type="password"
-                value={sourceRepositoryForm.accessToken}
-              />
-            </label>
-          )}
+          <label className="wide-field">
+            <span>{tokenLabel}</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                accessToken: event.target.value,
+              }))}
+              required
+              type="password"
+              value={sourceRepositoryForm.accessToken}
+            />
+          </label>
           <label className="wide-field">
             <span>Description</span>
             <input
@@ -862,7 +858,7 @@ function renderSourceRepositoryPanel(
                 <div className="source-repository-meta">
                   <small>{repository.visibility}</small>
                   <small>{repository.accountName || 'No account'}</small>
-                  <small>{repository.credentialConfigured ? 'Credential configured' : 'Credential not required'}</small>
+                  <small>{repository.credentialConfigured ? 'Credential configured' : 'Credential missing'}</small>
                   <button
                     className="danger-action"
                     onClick={() => handleDeleteSourceRepository(repository.id)}
