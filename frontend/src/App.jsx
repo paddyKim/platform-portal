@@ -19,10 +19,18 @@ function App() {
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [activeSection, setActiveSection] = useState('cicd')
   const [applicationDetail, setApplicationDetail] = useState(null)
+  const [sourceRepositories, setSourceRepositories] = useState([])
+  const [showSourceRepositoryForm, setShowSourceRepositoryForm] = useState(false)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
   const [cicdRequests, setCicdRequests] = useState([])
   const [auditEvents, setAuditEvents] = useState([])
+  const [sourceRepositoryForm, setSourceRepositoryForm] = useState({
+    name: '',
+    repositoryUrl: '',
+    defaultBranch: 'main',
+    description: '',
+  })
   const [cicdForm, setCicdForm] = useState({
     environment: '',
     componentId: '',
@@ -35,6 +43,8 @@ function App() {
   const [statusState, setStatusState] = useState('idle')
   const [runtimeState, setRuntimeState] = useState('idle')
   const [cicdState, setCicdState] = useState('idle')
+  const [sourceRepositoryState, setSourceRepositoryState] = useState('loading')
+  const [sourceRepositoryMessage, setSourceRepositoryMessage] = useState('')
   const [cicdMessage, setCicdMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -130,6 +140,34 @@ function App() {
       ignore = true
     }
   }, [selectedApplicationId])
+
+  useEffect(() => {
+    let ignore = false
+
+    async function loadSourceRepositories() {
+      setSourceRepositoryState('loading')
+      setSourceRepositoryMessage('')
+
+      try {
+        const data = await fetchJson('/api/source-repositories')
+        if (!ignore) {
+          setSourceRepositories(data)
+          setSourceRepositoryState('ready')
+        }
+      } catch (error) {
+        if (!ignore) {
+          setSourceRepositoryMessage(error.message)
+          setSourceRepositoryState('error')
+        }
+      }
+    }
+
+    loadSourceRepositories()
+
+    return () => {
+      ignore = true
+    }
+  }, [])
 
   useEffect(() => {
     let ignore = false
@@ -303,6 +341,40 @@ function App() {
     setAuditEvents(events)
   }
 
+  async function reloadSourceRepositories() {
+    const repositories = await fetchJson('/api/source-repositories')
+    setSourceRepositories(repositories)
+  }
+
+  async function handleCreateSourceRepository(event) {
+    event.preventDefault()
+    setSourceRepositoryState('submitting')
+    setSourceRepositoryMessage('')
+
+    try {
+      await fetchJson('/api/source-repositories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(sourceRepositoryForm),
+      })
+      setSourceRepositoryForm({
+        name: '',
+        repositoryUrl: '',
+        defaultBranch: 'main',
+        description: '',
+      })
+      setShowSourceRepositoryForm(false)
+      await reloadSourceRepositories()
+      setSourceRepositoryMessage('Source repository registered')
+      setSourceRepositoryState('ready')
+    } catch (error) {
+      setSourceRepositoryMessage(error.message)
+      setSourceRepositoryState('error')
+    }
+  }
+
   async function handleCreateCicdRequest(event) {
     event.preventDefault()
     if (!applicationDetail) {
@@ -398,29 +470,23 @@ function App() {
       </nav>
 
       <section className="catalog-layout">
-        <aside className="catalog-panel" aria-label="Applications">
-          <div className="panel-heading">
-            <h3>Applications</h3>
-            <span>{applications.length}</span>
-          </div>
+        <aside className="catalog-panel" aria-label={activeSection === 'cicd' ? 'Source repositories' : 'Applications'}>
+          {activeSection === 'cicd' && renderSourceRepositoryPanel(
+            sourceRepositories,
+            sourceRepositoryState,
+            sourceRepositoryMessage,
+            showSourceRepositoryForm,
+            setShowSourceRepositoryForm,
+            sourceRepositoryForm,
+            setSourceRepositoryForm,
+            handleCreateSourceRepository,
+          )}
 
-          {catalogState === 'loading' && <p className="muted">Loading catalog...</p>}
-          {catalogState === 'empty' && <p className="muted">No applications registered.</p>}
-
-          {catalogState === 'ready' && (
-            <div className="application-list">
-              {applications.map((application) => (
-                <button
-                  className={application.id === selectedApplicationId ? 'application-item active' : 'application-item'}
-                  key={application.id}
-                  onClick={() => setSelectedApplicationId(application.id)}
-                  type="button"
-                >
-                  <span>{application.name}</span>
-                  <small>{application.environments.length} environment</small>
-                </button>
-              ))}
-            </div>
+          {activeSection === 'apps' && renderApplicationPanel(
+            applications,
+            selectedApplicationId,
+            setSelectedApplicationId,
+            catalogState,
           )}
         </aside>
 
@@ -472,7 +538,11 @@ function App() {
                 <div>
                   <p className="eyebrow">Application Management</p>
                   <h2>{applicationDetail.name}</h2>
-                  <p>{applicationDetail.description}</p>
+                  <p>
+                    Live cluster view for the selected application. Sync, health,
+                    runtime, and component details are read from ArgoCD and
+                    Kubernetes status APIs.
+                  </p>
                 </div>
                 <a href={applicationDetail.repositoryUrl} rel="noreferrer" target="_blank">
                   Repository
@@ -534,6 +604,139 @@ function App() {
         </section>
       </section>
     </main>
+  )
+}
+
+function renderApplicationPanel(applications, selectedApplicationId, setSelectedApplicationId, catalogState) {
+  return (
+    <>
+      <div className="panel-heading">
+        <h3>Live Applications</h3>
+        <span>{applications.length}</span>
+      </div>
+
+      {catalogState === 'loading' && <p className="muted">Loading live applications...</p>}
+      {catalogState === 'empty' && <p className="muted">No applications discovered.</p>}
+
+      {catalogState === 'ready' && (
+        <div className="application-list">
+          {applications.map((application) => (
+            <button
+              className={application.id === selectedApplicationId ? 'application-item active' : 'application-item'}
+              key={application.id}
+              onClick={() => setSelectedApplicationId(application.id)}
+              type="button"
+            >
+              <span>{application.name}</span>
+              <small>{application.environments.length} environment</small>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
+function renderSourceRepositoryPanel(
+  sourceRepositories,
+  sourceRepositoryState,
+  sourceRepositoryMessage,
+  showSourceRepositoryForm,
+  setShowSourceRepositoryForm,
+  sourceRepositoryForm,
+  setSourceRepositoryForm,
+  handleCreateSourceRepository,
+) {
+  return (
+    <>
+      <div className="panel-heading">
+        <h3>Source Repositories</h3>
+        <button
+          className="panel-action"
+          onClick={() => setShowSourceRepositoryForm((current) => !current)}
+          type="button"
+        >
+          등록
+        </button>
+      </div>
+
+      {showSourceRepositoryForm && (
+        <form className="source-repo-form" onSubmit={handleCreateSourceRepository}>
+          <label>
+            <span>Name</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({ ...current, name: event.target.value }))}
+              required
+              type="text"
+              value={sourceRepositoryForm.name}
+            />
+          </label>
+          <label>
+            <span>Repository URL</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                repositoryUrl: event.target.value,
+              }))}
+              required
+              type="url"
+              value={sourceRepositoryForm.repositoryUrl}
+            />
+          </label>
+          <label>
+            <span>Default branch</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                defaultBranch: event.target.value,
+              }))}
+              required
+              type="text"
+              value={sourceRepositoryForm.defaultBranch}
+            />
+          </label>
+          <label>
+            <span>Description</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                description: event.target.value,
+              }))}
+              required
+              type="text"
+              value={sourceRepositoryForm.description}
+            />
+          </label>
+          <button disabled={sourceRepositoryState === 'submitting'} type="submit">Save</button>
+        </form>
+      )}
+
+      {sourceRepositoryMessage && (
+        <p className={sourceRepositoryState === 'error' ? 'status-message' : 'success-message'}>
+          {sourceRepositoryMessage}
+        </p>
+      )}
+
+      {sourceRepositoryState === 'loading' && <p className="muted">Loading source repositories...</p>}
+      {sourceRepositoryState !== 'loading' && sourceRepositories.length === 0 && (
+        <p className="muted">No source repositories registered.</p>
+      )}
+
+      <div className="source-repository-list">
+        {sourceRepositories.map((repository) => (
+          <article className="source-repository-card" key={repository.id}>
+            <div>
+              <strong>{repository.name}</strong>
+              <small>{repository.defaultBranch}</small>
+            </div>
+            <a href={repository.repositoryUrl} rel="noreferrer" target="_blank">
+              {repository.repositoryUrl}
+            </a>
+            <p>{repository.description}</p>
+          </article>
+        ))}
+      </div>
+    </>
   )
 }
 
