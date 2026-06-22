@@ -27,7 +27,11 @@ function App() {
   const [auditEvents, setAuditEvents] = useState([])
   const [sourceRepositoryForm, setSourceRepositoryForm] = useState({
     name: '',
+    provider: 'GITHUB',
     repositoryUrl: '',
+    apiBaseUrl: 'https://api.github.com',
+    accountName: '',
+    accessToken: '',
     defaultBranch: 'main',
     description: '',
   })
@@ -361,7 +365,11 @@ function App() {
       })
       setSourceRepositoryForm({
         name: '',
+        provider: 'GITHUB',
         repositoryUrl: '',
+        apiBaseUrl: 'https://api.github.com',
+        accountName: '',
+        accessToken: '',
         defaultBranch: 'main',
         description: '',
       })
@@ -654,6 +662,10 @@ function renderSourceRepositoryPanel(
   setSourceRepositoryForm,
   handleCreateSourceRepository,
 ) {
+  const isGitLab = sourceRepositoryForm.provider === 'GITLAB'
+  const tokenLabel = isGitLab ? 'GitLab access token' : 'GitHub access token'
+  const apiBaseLabel = isGitLab ? 'GitLab API URL' : 'GitHub API URL'
+
   return (
     <section className="source-repository-panel">
       <div className="source-repository-header">
@@ -680,6 +692,23 @@ function renderSourceRepositoryPanel(
       {showSourceRepositoryForm && (
         <form className="source-repo-form" onSubmit={handleCreateSourceRepository}>
           <label>
+            <span>Repository host</span>
+            <select
+              onChange={(event) => {
+                const provider = event.target.value
+                setSourceRepositoryForm((current) => ({
+                  ...current,
+                  provider,
+                  apiBaseUrl: provider === 'GITLAB' ? 'https://gitlab.com/api/v4' : 'https://api.github.com',
+                }))
+              }}
+              value={sourceRepositoryForm.provider}
+            >
+              <option value="GITHUB">GitHub</option>
+              <option value="GITLAB">GitLab</option>
+            </select>
+          </label>
+          <label>
             <span>Name</span>
             <input
               onChange={(event) => setSourceRepositoryForm((current) => ({ ...current, name: event.target.value }))}
@@ -698,6 +727,42 @@ function renderSourceRepositoryPanel(
               required
               type="url"
               value={sourceRepositoryForm.repositoryUrl}
+            />
+          </label>
+          <label>
+            <span>{apiBaseLabel}</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                apiBaseUrl: event.target.value,
+              }))}
+              required
+              type="url"
+              value={sourceRepositoryForm.apiBaseUrl}
+            />
+          </label>
+          <label>
+            <span>Account</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                accountName: event.target.value,
+              }))}
+              required
+              type="text"
+              value={sourceRepositoryForm.accountName}
+            />
+          </label>
+          <label>
+            <span>{tokenLabel}</span>
+            <input
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                accessToken: event.target.value,
+              }))}
+              required
+              type="password"
+              value={sourceRepositoryForm.accessToken}
             />
           </label>
           <label>
@@ -749,7 +814,7 @@ function renderSourceRepositoryPanel(
                   {repository.repositoryUrl}
                 </a>
               </div>
-              <span className="status-value neutral">{repository.defaultBranch}</span>
+              <span className="status-value neutral">{repository.provider || 'UNKNOWN'}</span>
             </div>
             <p>{repository.description}</p>
             <div className="pipeline-lanes" aria-label={`${repository.name} pipeline stages`}>
@@ -759,8 +824,9 @@ function renderSourceRepositoryPanel(
               <span>Deploy</span>
             </div>
             <div className="source-repository-meta">
-              <small>Registered {new Date(repository.createdAt).toLocaleString()}</small>
-              <small>Execution: platform-cicd</small>
+              <small>{repository.defaultBranch}</small>
+              <small>{repository.accountName || 'No account'}</small>
+              <small>{repository.credentialConfigured ? 'Credential configured' : 'Credential missing'}</small>
             </div>
           </article>
         ))}

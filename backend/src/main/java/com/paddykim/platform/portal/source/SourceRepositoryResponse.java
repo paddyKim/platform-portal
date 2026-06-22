@@ -5,7 +5,11 @@ import java.time.Instant;
 public record SourceRepositoryResponse(
         Long id,
         String name,
+        SourceRepositoryProvider provider,
         String repositoryUrl,
+        String apiBaseUrl,
+        String accountName,
+        boolean credentialConfigured,
         String defaultBranch,
         String description,
         Instant createdAt
@@ -15,7 +19,11 @@ public record SourceRepositoryResponse(
         return new SourceRepositoryResponse(
                 repository.getId(),
                 repository.getName(),
+                repository.getProvider(),
                 repository.getRepositoryUrl(),
+                repository.getApiBaseUrl(),
+                repository.getAccountName(),
+                repository.hasAccessToken(),
                 repository.getDefaultBranch(),
                 repository.getDescription(),
                 repository.getCreatedAt()

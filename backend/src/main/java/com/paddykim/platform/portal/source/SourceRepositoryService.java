@@ -31,7 +31,11 @@ public class SourceRepositoryService {
 
         SourceRepository repository = sourceRepositoryRepository.save(new SourceRepository(
                 request.name().trim(),
+                request.provider(),
                 repositoryUrl,
+                request.apiBaseUrl().trim(),
+                request.accountName().trim(),
+                request.accessToken().trim(),
                 request.defaultBranch().trim(),
                 request.description().trim()
         ));
