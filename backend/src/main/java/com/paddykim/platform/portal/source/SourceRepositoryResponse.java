@@ -6,12 +6,16 @@ public record SourceRepositoryResponse(
         Long id,
         String name,
         SourceRepositoryProvider provider,
+        SourceRepositoryVisibility visibility,
         String repositoryUrl,
         String apiBaseUrl,
         String accountName,
         boolean credentialConfigured,
-        String defaultBranch,
         String description,
+        long cloneCount,
+        long buildCount,
+        Instant lastClonedAt,
+        Instant lastBuiltAt,
         Instant createdAt
 ) {
 
@@ -20,12 +24,16 @@ public record SourceRepositoryResponse(
                 repository.getId(),
                 repository.getName(),
                 repository.getProvider(),
+                repository.getVisibility(),
                 repository.getRepositoryUrl(),
                 repository.getApiBaseUrl(),
                 repository.getAccountName(),
                 repository.hasAccessToken(),
-                repository.getDefaultBranch(),
                 repository.getDescription(),
+                repository.getCloneCount(),
+                repository.getBuildCount(),
+                repository.getLastClonedAt(),
+                repository.getLastBuiltAt(),
                 repository.getCreatedAt()
         );
     }

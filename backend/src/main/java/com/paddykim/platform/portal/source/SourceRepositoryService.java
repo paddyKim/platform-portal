@@ -29,17 +29,32 @@ public class SourceRepositoryService {
             throw new SourceRepositoryValidationException("Source repository already registered: " + repositoryUrl);
         }
 
+        String accessToken = request.accessToken() == null ? "" : request.accessToken().trim();
+        if (request.visibility() == SourceRepositoryVisibility.PRIVATE && accessToken.isBlank()) {
+            throw new SourceRepositoryValidationException("Private repository requires an access token");
+        }
+
         SourceRepository repository = sourceRepositoryRepository.save(new SourceRepository(
                 request.name().trim(),
                 request.provider(),
+                request.visibility(),
                 repositoryUrl,
                 request.apiBaseUrl().trim(),
                 request.accountName().trim(),
-                request.accessToken().trim(),
-                request.defaultBranch().trim(),
+                accessToken,
+                "",
                 request.description().trim()
         ));
 
         return SourceRepositoryResponse.from(repository);
+    }
+
+    @Transactional
+    public void deleteRepository(Long id) {
+        if (!sourceRepositoryRepository.existsById(id)) {
+            throw new SourceRepositoryNotFoundException(id);
+        }
+
+        sourceRepositoryRepository.deleteById(id);
     }
 }

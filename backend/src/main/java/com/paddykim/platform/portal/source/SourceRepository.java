@@ -25,6 +25,10 @@ public class SourceRepository {
     @Column(name = "provider")
     private SourceRepositoryProvider provider;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "visibility")
+    private SourceRepositoryVisibility visibility;
+
     @Column(nullable = false, unique = true)
     private String repositoryUrl;
 
@@ -43,6 +47,18 @@ public class SourceRepository {
     @Column(nullable = false)
     private String description;
 
+    @Column(name = "clone_count")
+    private Long cloneCount;
+
+    @Column(name = "build_count")
+    private Long buildCount;
+
+    @Column(name = "last_cloned_at")
+    private Instant lastClonedAt;
+
+    @Column(name = "last_built_at")
+    private Instant lastBuiltAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -53,12 +69,23 @@ public class SourceRepository {
     }
 
     public SourceRepository(String name, String repositoryUrl, String defaultBranch, String description) {
-        this(name, SourceRepositoryProvider.GITHUB, repositoryUrl, "https://api.github.com", "", "", defaultBranch, description);
+        this(
+                name,
+                SourceRepositoryProvider.GITHUB,
+                SourceRepositoryVisibility.PUBLIC,
+                repositoryUrl,
+                "https://api.github.com",
+                "",
+                "",
+                defaultBranch,
+                description
+        );
     }
 
     public SourceRepository(
             String name,
             SourceRepositoryProvider provider,
+            SourceRepositoryVisibility visibility,
             String repositoryUrl,
             String apiBaseUrl,
             String accountName,
@@ -68,12 +95,15 @@ public class SourceRepository {
     ) {
         this.name = name;
         this.provider = provider;
+        this.visibility = visibility;
         this.repositoryUrl = repositoryUrl;
         this.apiBaseUrl = apiBaseUrl;
         this.accountName = accountName;
         this.accessToken = accessToken;
         this.defaultBranch = defaultBranch;
         this.description = description;
+        this.cloneCount = 0L;
+        this.buildCount = 0L;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -88,6 +118,10 @@ public class SourceRepository {
 
     public SourceRepositoryProvider getProvider() {
         return provider;
+    }
+
+    public SourceRepositoryVisibility getVisibility() {
+        return visibility;
     }
 
     public String getRepositoryUrl() {
@@ -120,5 +154,21 @@ public class SourceRepository {
 
     public Instant getUpdatedAt() {
         return updatedAt;
+    }
+
+    public long getCloneCount() {
+        return cloneCount == null ? 0 : cloneCount;
+    }
+
+    public long getBuildCount() {
+        return buildCount == null ? 0 : buildCount;
+    }
+
+    public Instant getLastClonedAt() {
+        return lastClonedAt;
+    }
+
+    public Instant getLastBuiltAt() {
+        return lastBuiltAt;
     }
 }

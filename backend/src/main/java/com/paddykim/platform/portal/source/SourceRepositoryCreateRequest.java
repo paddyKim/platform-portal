@@ -6,11 +6,11 @@ import jakarta.validation.constraints.NotNull;
 public record SourceRepositoryCreateRequest(
         @NotBlank String name,
         @NotNull SourceRepositoryProvider provider,
+        @NotNull SourceRepositoryVisibility visibility,
         @NotBlank String repositoryUrl,
         @NotBlank String apiBaseUrl,
         @NotBlank String accountName,
-        @NotBlank String accessToken,
-        @NotBlank String defaultBranch,
+        String accessToken,
         @NotBlank String description
 ) {
 }

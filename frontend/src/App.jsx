@@ -20,7 +20,7 @@ function App() {
   const [activeSection, setActiveSection] = useState('cicd')
   const [applicationDetail, setApplicationDetail] = useState(null)
   const [sourceRepositories, setSourceRepositories] = useState([])
-  const [showSourceRepositoryForm, setShowSourceRepositoryForm] = useState(false)
+  const [sourceRepositoryView, setSourceRepositoryView] = useState('list')
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
   const [cicdRequests, setCicdRequests] = useState([])
@@ -28,11 +28,11 @@ function App() {
   const [sourceRepositoryForm, setSourceRepositoryForm] = useState({
     name: '',
     provider: 'GITHUB',
+    visibility: 'PUBLIC',
     repositoryUrl: '',
     apiBaseUrl: 'https://api.github.com',
     accountName: '',
     accessToken: '',
-    defaultBranch: 'main',
     description: '',
   })
   const [cicdForm, setCicdForm] = useState({
@@ -366,16 +366,41 @@ function App() {
       setSourceRepositoryForm({
         name: '',
         provider: 'GITHUB',
+        visibility: 'PUBLIC',
         repositoryUrl: '',
         apiBaseUrl: 'https://api.github.com',
         accountName: '',
         accessToken: '',
-        defaultBranch: 'main',
         description: '',
       })
-      setShowSourceRepositoryForm(false)
+      setSourceRepositoryView('list')
       await reloadSourceRepositories()
       setSourceRepositoryMessage('Source repository registered')
+      setSourceRepositoryState('ready')
+    } catch (error) {
+      setSourceRepositoryMessage(error.message)
+      setSourceRepositoryState('error')
+    }
+  }
+
+  async function handleDeleteSourceRepository(repositoryId) {
+    const confirmed = window.confirm('Delete this source repository?')
+    if (!confirmed) {
+      return
+    }
+
+    setSourceRepositoryState('submitting')
+    setSourceRepositoryMessage('')
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/source-repositories/${repositoryId}`, {
+        method: 'DELETE',
+      })
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`)
+      }
+      await reloadSourceRepositories()
+      setSourceRepositoryMessage('Source repository deleted')
       setSourceRepositoryState('ready')
     } catch (error) {
       setSourceRepositoryMessage(error.message)
@@ -483,11 +508,12 @@ function App() {
             sourceRepositories,
             sourceRepositoryState,
             sourceRepositoryMessage,
-            showSourceRepositoryForm,
-            setShowSourceRepositoryForm,
+            sourceRepositoryView,
+            setSourceRepositoryView,
             sourceRepositoryForm,
             setSourceRepositoryForm,
             handleCreateSourceRepository,
+            handleDeleteSourceRepository,
           )}
 
           {detailState === 'loading' && <p className="muted">Loading CI/CD context...</p>}
@@ -656,13 +682,15 @@ function renderSourceRepositoryPanel(
   sourceRepositories,
   sourceRepositoryState,
   sourceRepositoryMessage,
-  showSourceRepositoryForm,
-  setShowSourceRepositoryForm,
+  sourceRepositoryView,
+  setSourceRepositoryView,
   sourceRepositoryForm,
   setSourceRepositoryForm,
   handleCreateSourceRepository,
+  handleDeleteSourceRepository,
 ) {
   const isGitLab = sourceRepositoryForm.provider === 'GITLAB'
+  const isPrivate = sourceRepositoryForm.visibility === 'PRIVATE'
   const tokenLabel = isGitLab ? 'GitLab access token' : 'GitHub access token'
   const apiBaseLabel = isGitLab ? 'GitLab API URL' : 'GitHub API URL'
 
@@ -681,15 +709,21 @@ function renderSourceRepositoryPanel(
           <span>{sourceRepositories.length} repos</span>
           <button
             className="panel-action"
-            onClick={() => setShowSourceRepositoryForm((current) => !current)}
+            onClick={() => setSourceRepositoryView(sourceRepositoryView === 'register' ? 'list' : 'register')}
             type="button"
           >
-            등록
+            {sourceRepositoryView === 'register' ? '목록' : '등록'}
           </button>
         </div>
       </div>
 
-      {showSourceRepositoryForm && (
+      {sourceRepositoryMessage && (
+        <p className={sourceRepositoryState === 'error' ? 'status-message' : 'success-message'}>
+          {sourceRepositoryMessage}
+        </p>
+      )}
+
+      {sourceRepositoryView === 'register' && (
         <form className="source-repo-form" onSubmit={handleCreateSourceRepository}>
           <label>
             <span>Repository host</span>
@@ -709,6 +743,20 @@ function renderSourceRepositoryPanel(
             </select>
           </label>
           <label>
+            <span>Visibility</span>
+            <select
+              onChange={(event) => setSourceRepositoryForm((current) => ({
+                ...current,
+                visibility: event.target.value,
+                accessToken: event.target.value === 'PUBLIC' ? '' : current.accessToken,
+              }))}
+              value={sourceRepositoryForm.visibility}
+            >
+              <option value="PUBLIC">Public</option>
+              <option value="PRIVATE">Private</option>
+            </select>
+          </label>
+          <label>
             <span>Name</span>
             <input
               onChange={(event) => setSourceRepositoryForm((current) => ({ ...current, name: event.target.value }))}
@@ -717,7 +765,7 @@ function renderSourceRepositoryPanel(
               value={sourceRepositoryForm.name}
             />
           </label>
-          <label>
+          <label className="wide-field">
             <span>Repository URL</span>
             <input
               onChange={(event) => setSourceRepositoryForm((current) => ({
@@ -729,7 +777,7 @@ function renderSourceRepositoryPanel(
               value={sourceRepositoryForm.repositoryUrl}
             />
           </label>
-          <label>
+          <label className="wide-field">
             <span>{apiBaseLabel}</span>
             <input
               onChange={(event) => setSourceRepositoryForm((current) => ({
@@ -753,31 +801,21 @@ function renderSourceRepositoryPanel(
               value={sourceRepositoryForm.accountName}
             />
           </label>
-          <label>
-            <span>{tokenLabel}</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                accessToken: event.target.value,
-              }))}
-              required
-              type="password"
-              value={sourceRepositoryForm.accessToken}
-            />
-          </label>
-          <label>
-            <span>Default branch</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                defaultBranch: event.target.value,
-              }))}
-              required
-              type="text"
-              value={sourceRepositoryForm.defaultBranch}
-            />
-          </label>
-          <label>
+          {isPrivate && (
+            <label className="wide-field">
+              <span>{tokenLabel}</span>
+              <input
+                onChange={(event) => setSourceRepositoryForm((current) => ({
+                  ...current,
+                  accessToken: event.target.value,
+                }))}
+                required
+                type="password"
+                value={sourceRepositoryForm.accessToken}
+              />
+            </label>
+          )}
+          <label className="wide-field">
             <span>Description</span>
             <input
               onChange={(event) => setSourceRepositoryForm((current) => ({
@@ -789,48 +827,55 @@ function renderSourceRepositoryPanel(
               value={sourceRepositoryForm.description}
             />
           </label>
-          <button disabled={sourceRepositoryState === 'submitting'} type="submit">Save</button>
+          <button disabled={sourceRepositoryState === 'submitting'} type="submit">Register source</button>
         </form>
       )}
 
-      {sourceRepositoryMessage && (
-        <p className={sourceRepositoryState === 'error' ? 'status-message' : 'success-message'}>
-          {sourceRepositoryMessage}
-        </p>
-      )}
+      {sourceRepositoryView === 'list' && (
+        <>
+          {sourceRepositoryState === 'loading' && <p className="muted">Loading source repositories...</p>}
+          {sourceRepositoryState !== 'loading' && sourceRepositories.length === 0 && (
+            <p className="muted">No source repositories registered.</p>
+          )}
 
-      {sourceRepositoryState === 'loading' && <p className="muted">Loading source repositories...</p>}
-      {sourceRepositoryState !== 'loading' && sourceRepositories.length === 0 && (
-        <p className="muted">No source repositories registered.</p>
+          <div className="source-repository-list">
+            {sourceRepositories.map((repository) => (
+              <article className="source-repository-card" key={repository.id}>
+                <div className="source-repository-main">
+                  <div>
+                    <strong>{repository.name}</strong>
+                    <a href={repository.repositoryUrl} rel="noreferrer" target="_blank">
+                      {repository.repositoryUrl}
+                    </a>
+                  </div>
+                  <span className="status-value neutral">{repository.provider || 'UNKNOWN'}</span>
+                </div>
+                <p>{repository.description}</p>
+                <div className="source-repository-stats">
+                  {renderStatusMetric('Clones', repository.cloneCount ?? 0)}
+                  {renderStatusMetric('Builds', repository.buildCount ?? 0)}
+                  {renderStatusMetric(
+                    'Last clone',
+                    repository.lastClonedAt ? new Date(repository.lastClonedAt).toLocaleString() : 'None',
+                  )}
+                </div>
+                <div className="source-repository-meta">
+                  <small>{repository.visibility}</small>
+                  <small>{repository.accountName || 'No account'}</small>
+                  <small>{repository.credentialConfigured ? 'Credential configured' : 'Credential not required'}</small>
+                  <button
+                    className="danger-action"
+                    onClick={() => handleDeleteSourceRepository(repository.id)}
+                    type="button"
+                  >
+                    제거
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
       )}
-
-      <div className="source-repository-list">
-        {sourceRepositories.map((repository) => (
-          <article className="source-repository-card" key={repository.id}>
-            <div className="source-repository-main">
-              <div>
-                <strong>{repository.name}</strong>
-                <a href={repository.repositoryUrl} rel="noreferrer" target="_blank">
-                  {repository.repositoryUrl}
-                </a>
-              </div>
-              <span className="status-value neutral">{repository.provider || 'UNKNOWN'}</span>
-            </div>
-            <p>{repository.description}</p>
-            <div className="pipeline-lanes" aria-label={`${repository.name} pipeline stages`}>
-              <span>Source</span>
-              <span>Build</span>
-              <span>Scan</span>
-              <span>Deploy</span>
-            </div>
-            <div className="source-repository-meta">
-              <small>{repository.defaultBranch}</small>
-              <small>{repository.accountName || 'No account'}</small>
-              <small>{repository.credentialConfigured ? 'Credential configured' : 'Credential missing'}</small>
-            </div>
-          </article>
-        ))}
-      </div>
     </section>
   )
 }
