@@ -8,9 +8,9 @@ public record SourceRepositoryCreateRequest(
         @NotNull SourceRepositoryProvider provider,
         @NotNull SourceRepositoryVisibility visibility,
         @NotBlank String repositoryUrl,
-        @NotBlank String apiBaseUrl,
+        String apiBaseUrl,
         @NotBlank String accountName,
         @NotBlank String encryptedAccessToken,
-        @NotBlank String description
+        String description
 ) {
 }

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -31,6 +32,9 @@ class SourceRepositoryControllerTests {
     private SourceRepositoryRepository sourceRepositoryRepository;
 
     @Autowired
+    private BuildProfileRepository buildProfileRepository;
+
+    @Autowired
     private SourceRepositoryCredentialService credentialService;
 
     @Autowired
@@ -38,6 +42,7 @@ class SourceRepositoryControllerTests {
 
     @BeforeEach
     void setUp() {
+        buildProfileRepository.deleteAll();
         sourceRepositoryRepository.deleteAll();
     }
 
@@ -69,10 +74,8 @@ class SourceRepositoryControllerTests {
                                   "provider": "GITHUB",
                                   "visibility": "PUBLIC",
                                   "repositoryUrl": "https://github.com/paddyKim/platform-app",
-                                  "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
-                                  "encryptedAccessToken": "%s",
-                                  "description": "Public app source repository"
+                                  "encryptedAccessToken": "%s"
                                 }
                                 """.formatted(encryptForNetwork("public-repo-password"))))
                 .andExpect(status().isCreated())
@@ -80,7 +83,9 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$.provider", is("GITHUB")))
                 .andExpect(jsonPath("$.visibility", is("PUBLIC")))
                 .andExpect(jsonPath("$.repositoryUrl", is("https://github.com/paddyKim/platform-app")))
+                .andExpect(jsonPath("$.apiBaseUrl", is("https://api.github.com")))
                 .andExpect(jsonPath("$.accountName", is("paddyKim")))
+                .andExpect(jsonPath("$.description", is("")))
                 .andExpect(jsonPath("$.credentialConfigured", is(true)))
                 .andExpect(jsonPath("$.cloneCount", is(0)))
                 .andExpect(jsonPath("$.buildCount", is(0)));
@@ -108,7 +113,6 @@ class SourceRepositoryControllerTests {
                                   "provider": "GITLAB",
                                   "visibility": "PRIVATE",
                                   "repositoryUrl": "https://gitlab.com/paddyKim/sample-service",
-                                  "apiBaseUrl": "https://gitlab.com/api/v4",
                                   "accountName": "paddyKim",
                                   "encryptedAccessToken": "%s",
                                   "description": "Private service source repository"
@@ -117,6 +121,7 @@ class SourceRepositoryControllerTests {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.provider", is("GITLAB")))
                 .andExpect(jsonPath("$.visibility", is("PRIVATE")))
+                .andExpect(jsonPath("$.apiBaseUrl", is("https://gitlab.com/api/v4")))
                 .andExpect(jsonPath("$.credentialConfigured", is(true)));
     }
 
@@ -130,7 +135,6 @@ class SourceRepositoryControllerTests {
                                   "provider": "GITHUB",
                                   "visibility": "PRIVATE",
                                   "repositoryUrl": "https://github.com/paddyKim/private-service",
-                                  "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
                                   "encryptedAccessToken": "",
                                   "description": "Source repository without credential"
@@ -150,7 +154,6 @@ class SourceRepositoryControllerTests {
                                   "provider": "GITHUB",
                                   "visibility": "PUBLIC",
                                   "repositoryUrl": "https://github.com/paddyKim/platform-app",
-                                  "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
                                   "encryptedAccessToken": "%s",
                                   "description": "Duplicate source repository"
@@ -166,7 +169,6 @@ class SourceRepositoryControllerTests {
                                   "provider": "GITHUB",
                                   "visibility": "PUBLIC",
                                   "repositoryUrl": "https://github.com/paddyKim/platform-app",
-                                  "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
                                   "encryptedAccessToken": "%s",
                                   "description": "Duplicate source repository"
@@ -186,7 +188,6 @@ class SourceRepositoryControllerTests {
                                   "provider": "GITHUB",
                                   "visibility": "PUBLIC",
                                   "repositoryUrl": "https://github.com/paddyKim/delete-me",
-                                  "apiBaseUrl": "https://api.github.com",
                                   "accountName": "paddyKim",
                                   "encryptedAccessToken": "%s",
                                   "description": "Repository to delete"
@@ -203,7 +204,154 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$", hasSize(0)));
     }
 
+    @Test
+    void managesBuildProfilesForSourceRepository() throws Exception {
+        SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+
+        mockMvc.perform(post("/api/source-repositories/{repositoryId}/build-profiles", repository.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "backend image build",
+                                  "ciTool": "SHELL",
+                                  "workingDirectory": ".",
+                                  "script": "./gradlew test"
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.sourceRepositoryId", is(repository.getId().intValue())))
+                .andExpect(jsonPath("$.name", is("backend image build")))
+                .andExpect(jsonPath("$.ciTool", is("SHELL")))
+                .andExpect(jsonPath("$.workingDirectory", is(".")))
+                .andExpect(jsonPath("$.script", is("./gradlew test")))
+                .andExpect(jsonPath("$.description", is("")));
+
+        Long profileId = buildProfileRepository.findBySourceRepositoryId(repository.getId()).get(0).getId();
+
+        mockMvc.perform(get("/api/source-repositories/{repositoryId}/build-profiles", repository.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].id", is(profileId.intValue())));
+
+        mockMvc.perform(put(
+                        "/api/source-repositories/{repositoryId}/build-profiles/{profileId}",
+                        repository.getId(),
+                        profileId
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "jenkins pipeline draft",
+                                  "ciTool": "JENKINS",
+                                  "workingDirectory": "backend",
+                                  "script": "pipeline { agent any }",
+                                  "description": "Draft Jenkins profile"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name", is("jenkins pipeline draft")))
+                .andExpect(jsonPath("$.ciTool", is("JENKINS")))
+                .andExpect(jsonPath("$.workingDirectory", is("backend")));
+
+        mockMvc.perform(delete(
+                        "/api/source-repositories/{repositoryId}/build-profiles/{profileId}",
+                        repository.getId(),
+                        profileId
+                ))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/source-repositories/{repositoryId}/build-profiles", repository.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(0)));
+    }
+
+    @Test
+    void preparesBuildProfileRunPayload() throws Exception {
+        SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+        BuildProfile buildProfile = buildProfileRepository.save(new BuildProfile(
+                repository,
+                "backend image build",
+                BuildProfileCiTool.SHELL,
+                ".",
+                "./gradlew test",
+                "Build backend image"
+        ));
+
+        mockMvc.perform(post(
+                        "/api/source-repositories/{repositoryId}/build-profiles/{profileId}/run",
+                        repository.getId(),
+                        buildProfile.getId()
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "requestedBy": "platform-operator",
+                                  "imageTag": "day21-test"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourceRepositoryId", is(repository.getId().intValue())))
+                .andExpect(jsonPath("$.buildProfileId", is(buildProfile.getId().intValue())))
+                .andExpect(jsonPath("$.repositoryName", is("platform-app")))
+                .andExpect(jsonPath("$.ciTool", is("SHELL")))
+                .andExpect(jsonPath("$.requestedBy", is("platform-operator")))
+                .andExpect(jsonPath("$.imageTag", is("day21-test")))
+                .andExpect(jsonPath("$.dispatchTarget", is("platform-cicd-http")))
+                .andExpect(jsonPath("$.status", is("DISPATCHED")));
+    }
+
+    @Test
+    void rejectsBuildProfileOutsideRepositoryWorkspace() throws Exception {
+        SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+
+        mockMvc.perform(post("/api/source-repositories/{repositoryId}/build-profiles", repository.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "unsafe build",
+                                  "ciTool": "SHELL",
+                                  "workingDirectory": "../platform-deploy",
+                                  "script": "./gradlew test",
+                                  "description": "Unsafe build profile"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("workingDirectory")));
+    }
+
+    @Test
+    void deletesBuildProfilesWithSourceRepository() throws Exception {
+        SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("delete-with-profile"));
+        buildProfileRepository.save(new BuildProfile(
+                repository,
+                "backend image build",
+                BuildProfileCiTool.SHELL,
+                ".",
+                "./gradlew test",
+                "Build backend image"
+        ));
+
+        mockMvc.perform(delete("/api/source-repositories/{id}", repository.getId()))
+                .andExpect(status().isNoContent());
+
+        org.assertj.core.api.Assertions.assertThat(buildProfileRepository.findAll()).isEmpty();
+    }
+
     private String encryptForNetwork(String plainText) {
         return credentialService.encryptForNetwork(plainText);
+    }
+
+    private SourceRepository sourceRepository(String name) {
+        return new SourceRepository(
+                name,
+                SourceRepositoryProvider.GITHUB,
+                SourceRepositoryVisibility.PUBLIC,
+                "https://github.com/paddyKim/%s".formatted(name),
+                "https://api.github.com",
+                "paddyKim",
+                credentialService.encryptForStorage("public-repo-password"),
+                "",
+                "Source repository for tests"
+        );
     }
 }

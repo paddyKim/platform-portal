@@ -3,6 +3,107 @@ import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
 
+const BUILD_PROFILE_TEMPLATES = {
+  SHELL: {
+    workingDirectory: '.',
+    script: `#!/usr/bin/env bash
+set -euo pipefail
+
+./gradlew test
+docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
+  },
+  JENKINS: {
+    workingDirectory: '.',
+    script: `pipeline {
+  agent any
+  stages {
+    stage('Test') {
+      steps {
+        sh './gradlew test'
+      }
+    }
+    stage('Build image') {
+      steps {
+        sh 'docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend'
+      }
+    }
+  }
+}`,
+  },
+  GITHUB_ACTIONS: {
+    workingDirectory: '.',
+    script: `name: build
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./gradlew test
+      - run: docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
+  },
+  GITLAB_CI: {
+    workingDirectory: '.',
+    script: `stages:
+  - test
+  - build
+
+test:
+  stage: test
+  script:
+    - ./gradlew test
+
+build:
+  stage: build
+  script:
+    - docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
+  },
+}
+
+const PIPELINE_PREVIEWS = {
+  SHELL: {
+    label: 'Shell runner',
+    unit: 'Template flow',
+    stages: [
+      { name: 'Clone', detail: 'Fetch source' },
+      { name: 'Test', detail: './gradlew test' },
+      { name: 'Build', detail: 'docker build' },
+      { name: 'Publish', detail: 'image tag' },
+    ],
+  },
+  JENKINS: {
+    label: 'Jenkins Pipeline',
+    unit: 'Template flow',
+    stages: [
+      { name: 'Checkout', detail: 'SCM' },
+      { name: 'Test', detail: 'sh step' },
+      { name: 'Build image', detail: 'Docker' },
+      { name: 'Post', detail: 'archive/logs' },
+    ],
+  },
+  GITHUB_ACTIONS: {
+    label: 'GitHub Actions',
+    unit: 'Template flow',
+    stages: [
+      { name: 'workflow_dispatch', detail: 'trigger' },
+      { name: 'checkout', detail: 'action' },
+      { name: 'test', detail: 'run step' },
+      { name: 'build', detail: 'run step' },
+    ],
+  },
+  GITLAB_CI: {
+    label: 'GitLab CI',
+    unit: 'Template flow',
+    stages: [
+      { name: 'test', detail: 'job' },
+      { name: 'build', detail: 'job' },
+      { name: 'publish', detail: 'job' },
+      { name: 'deploy-ready', detail: 'artifact' },
+    ],
+  },
+}
+
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, options)
   if (!response.ok) {
@@ -64,6 +165,9 @@ function App() {
   const [applicationDetail, setApplicationDetail] = useState(null)
   const [sourceRepositories, setSourceRepositories] = useState([])
   const [sourceRepositoryView, setSourceRepositoryView] = useState('list')
+  const [selectedSourceRepositoryId, setSelectedSourceRepositoryId] = useState(null)
+  const [buildProfiles, setBuildProfiles] = useState([])
+  const [selectedBuildProfileId, setSelectedBuildProfileId] = useState(null)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
   const [cicdRequests, setCicdRequests] = useState([])
@@ -73,11 +177,20 @@ function App() {
     provider: 'GITHUB',
     visibility: 'PUBLIC',
     repositoryUrl: '',
-    apiBaseUrl: 'https://api.github.com',
     accountName: '',
     accessToken: '',
     description: '',
   })
+  const [buildProfileForm, setBuildProfileForm] = useState({
+    name: '',
+    ciTool: 'SHELL',
+    workingDirectory: BUILD_PROFILE_TEMPLATES.SHELL.workingDirectory,
+    script: BUILD_PROFILE_TEMPLATES.SHELL.script,
+    description: '',
+    requestedBy: 'platform-operator',
+    imageTag: 'day21-test',
+  })
+  const [editingBuildProfileId, setEditingBuildProfileId] = useState(null)
   const [cicdForm, setCicdForm] = useState({
     environment: '',
     componentId: '',
@@ -91,7 +204,9 @@ function App() {
   const [runtimeState, setRuntimeState] = useState('idle')
   const [cicdState, setCicdState] = useState('idle')
   const [sourceRepositoryState, setSourceRepositoryState] = useState('loading')
+  const [buildProfileState, setBuildProfileState] = useState('idle')
   const [sourceRepositoryMessage, setSourceRepositoryMessage] = useState('')
+  const [buildProfileMessage, setBuildProfileMessage] = useState('')
   const [cicdMessage, setCicdMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -249,6 +364,53 @@ function App() {
   }, [])
 
   useEffect(() => {
+    if (!selectedSourceRepositoryId) {
+      setBuildProfiles([])
+      setSelectedBuildProfileId(null)
+      setBuildProfileState('idle')
+      setBuildProfileMessage('')
+      return
+    }
+
+    let ignore = false
+
+    async function loadBuildProfiles() {
+      setBuildProfileState('loading')
+      setBuildProfileMessage('')
+
+      try {
+        const data = await fetchJson(`/api/source-repositories/${selectedSourceRepositoryId}/build-profiles`)
+        if (!ignore) {
+          setBuildProfiles(data)
+          setBuildProfileState('ready')
+        }
+      } catch (error) {
+        if (!ignore) {
+          setBuildProfileMessage(error.message)
+          setBuildProfileState('error')
+        }
+      }
+    }
+
+    loadBuildProfiles()
+
+    return () => {
+      ignore = true
+    }
+  }, [selectedSourceRepositoryId])
+
+  useEffect(() => {
+    if (buildProfiles.length === 0) {
+      setSelectedBuildProfileId(null)
+      return
+    }
+
+    if (!buildProfiles.some((profile) => profile.id === selectedBuildProfileId)) {
+      setSelectedBuildProfileId(buildProfiles[0].id)
+    }
+  }, [buildProfiles, selectedBuildProfileId])
+
+  useEffect(() => {
     if (!applicationDetail) {
       setEnvironmentStatuses({})
       setStatusState('idle')
@@ -379,6 +541,16 @@ function App() {
     [applications, selectedApplicationId],
   )
 
+  const selectedSourceRepository = useMemo(
+    () => sourceRepositories.find((repository) => repository.id === selectedSourceRepositoryId),
+    [sourceRepositories, selectedSourceRepositoryId],
+  )
+
+  const selectedBuildProfile = useMemo(
+    () => buildProfiles.find((profile) => profile.id === selectedBuildProfileId),
+    [buildProfiles, selectedBuildProfileId],
+  )
+
   async function reloadCicdData() {
     const [requests, events] = await Promise.all([
       fetchJson('/api/cicd/requests'),
@@ -391,6 +563,52 @@ function App() {
   async function reloadSourceRepositories() {
     const repositories = await fetchJson('/api/source-repositories')
     setSourceRepositories(repositories)
+  }
+
+  async function reloadBuildProfiles(repositoryId = selectedSourceRepositoryId) {
+    if (!repositoryId) {
+      setBuildProfiles([])
+      return
+    }
+
+    const profiles = await fetchJson(`/api/source-repositories/${repositoryId}/build-profiles`)
+    setBuildProfiles(profiles)
+  }
+
+  function resetBuildProfileForm() {
+    setEditingBuildProfileId(null)
+    setBuildProfileForm({
+      name: '',
+      ciTool: 'SHELL',
+      workingDirectory: BUILD_PROFILE_TEMPLATES.SHELL.workingDirectory,
+      script: BUILD_PROFILE_TEMPLATES.SHELL.script,
+      description: '',
+      requestedBy: 'platform-operator',
+      imageTag: 'day21-test',
+    })
+  }
+
+  function handleSelectBuildProfileTool(ciTool) {
+    const template = BUILD_PROFILE_TEMPLATES[ciTool]
+    setBuildProfileForm((current) => ({
+      ...current,
+      ciTool,
+      workingDirectory: template.workingDirectory,
+      script: template.script,
+    }))
+  }
+
+  function handleEditBuildProfile(profile) {
+    setEditingBuildProfileId(profile.id)
+    setSelectedBuildProfileId(profile.id)
+    setBuildProfileForm((current) => ({
+      ...current,
+      name: profile.name,
+      ciTool: profile.ciTool,
+      workingDirectory: profile.workingDirectory,
+      script: profile.script,
+      description: profile.description,
+    }))
   }
 
   async function handleCreateSourceRepository(event) {
@@ -410,7 +628,6 @@ function App() {
           provider: sourceRepositoryForm.provider,
           visibility: sourceRepositoryForm.visibility,
           repositoryUrl: sourceRepositoryForm.repositoryUrl,
-          apiBaseUrl: sourceRepositoryForm.apiBaseUrl,
           accountName: sourceRepositoryForm.accountName,
           description: sourceRepositoryForm.description,
           encryptedAccessToken,
@@ -421,7 +638,6 @@ function App() {
         provider: 'GITHUB',
         visibility: 'PUBLIC',
         repositoryUrl: '',
-        apiBaseUrl: 'https://api.github.com',
         accountName: '',
         accessToken: '',
         description: '',
@@ -452,12 +668,120 @@ function App() {
       if (!response.ok) {
         throw new Error(`API returned ${response.status}`)
       }
+      if (selectedSourceRepositoryId === repositoryId) {
+        setSelectedSourceRepositoryId(null)
+        setSourceRepositoryView('list')
+        setBuildProfiles([])
+        resetBuildProfileForm()
+      }
       await reloadSourceRepositories()
       setSourceRepositoryMessage('Source repository deleted')
       setSourceRepositoryState('ready')
     } catch (error) {
       setSourceRepositoryMessage(error.message)
       setSourceRepositoryState('error')
+    }
+  }
+
+  async function handleSaveBuildProfile(event) {
+    event.preventDefault()
+    if (!selectedSourceRepositoryId) {
+      return
+    }
+
+    setBuildProfileState('submitting')
+    setBuildProfileMessage('')
+
+    const path = editingBuildProfileId
+      ? `/api/source-repositories/${selectedSourceRepositoryId}/build-profiles/${editingBuildProfileId}`
+      : `/api/source-repositories/${selectedSourceRepositoryId}/build-profiles`
+    const method = editingBuildProfileId ? 'PUT' : 'POST'
+
+    try {
+      const savedProfile = await fetchJson(path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: buildProfileForm.name,
+          ciTool: buildProfileForm.ciTool,
+          workingDirectory: buildProfileForm.workingDirectory,
+          script: buildProfileForm.script,
+          description: buildProfileForm.description,
+        }),
+      })
+      await reloadBuildProfiles(selectedSourceRepositoryId)
+      setSelectedBuildProfileId(savedProfile.id)
+      resetBuildProfileForm()
+      setBuildProfileMessage(editingBuildProfileId ? 'Build profile updated' : 'Build profile saved')
+      setBuildProfileState('ready')
+    } catch (error) {
+      setBuildProfileMessage(error.message)
+      setBuildProfileState('error')
+    }
+  }
+
+  async function handleDeleteBuildProfile(profileId) {
+    if (!selectedSourceRepositoryId) {
+      return
+    }
+
+    const confirmed = window.confirm('Delete this build profile?')
+    if (!confirmed) {
+      return
+    }
+
+    setBuildProfileState('submitting')
+    setBuildProfileMessage('')
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/api/source-repositories/${selectedSourceRepositoryId}/build-profiles/${profileId}`,
+        { method: 'DELETE' },
+      )
+      if (!response.ok) {
+        throw new Error(`API returned ${response.status}`)
+      }
+      await reloadBuildProfiles(selectedSourceRepositoryId)
+      if (editingBuildProfileId === profileId) {
+        resetBuildProfileForm()
+      }
+      setBuildProfileMessage('Build profile deleted')
+      setBuildProfileState('ready')
+    } catch (error) {
+      setBuildProfileMessage(error.message)
+      setBuildProfileState('error')
+    }
+  }
+
+  async function handleRunBuildProfile(profile) {
+    if (!selectedSourceRepositoryId) {
+      return
+    }
+
+    setBuildProfileState('submitting')
+    setBuildProfileMessage('')
+
+    try {
+      const result = await fetchJson(
+        `/api/source-repositories/${selectedSourceRepositoryId}/build-profiles/${profile.id}/run`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestedBy: buildProfileForm.requestedBy,
+            imageTag: buildProfileForm.imageTag,
+          }),
+        },
+      )
+      setBuildProfileMessage(`${result.status}: ${result.statusMessage}`)
+      setBuildProfileState('ready')
+    } catch (error) {
+      setBuildProfileMessage(error.message)
+      setBuildProfileState('error')
     }
   }
 
@@ -563,10 +887,27 @@ function App() {
             sourceRepositoryMessage,
             sourceRepositoryView,
             setSourceRepositoryView,
+            selectedSourceRepository,
+            setSelectedSourceRepositoryId,
             sourceRepositoryForm,
             setSourceRepositoryForm,
             handleCreateSourceRepository,
             handleDeleteSourceRepository,
+            buildProfiles,
+            selectedBuildProfile,
+            selectedBuildProfileId,
+            setSelectedBuildProfileId,
+            buildProfileForm,
+            setBuildProfileForm,
+            buildProfileState,
+            buildProfileMessage,
+            editingBuildProfileId,
+            handleSelectBuildProfileTool,
+            handleSaveBuildProfile,
+            handleEditBuildProfile,
+            handleDeleteBuildProfile,
+            handleRunBuildProfile,
+            resetBuildProfileForm,
           )}
 
           {detailState === 'loading' && <p className="muted">Loading CI/CD context...</p>}
@@ -737,34 +1078,56 @@ function renderSourceRepositoryPanel(
   sourceRepositoryMessage,
   sourceRepositoryView,
   setSourceRepositoryView,
+  selectedSourceRepository,
+  setSelectedSourceRepositoryId,
   sourceRepositoryForm,
   setSourceRepositoryForm,
   handleCreateSourceRepository,
   handleDeleteSourceRepository,
+  buildProfiles,
+  selectedBuildProfile,
+  selectedBuildProfileId,
+  setSelectedBuildProfileId,
+  buildProfileForm,
+  setBuildProfileForm,
+  buildProfileState,
+  buildProfileMessage,
+  editingBuildProfileId,
+  handleSelectBuildProfileTool,
+  handleSaveBuildProfile,
+  handleEditBuildProfile,
+  handleDeleteBuildProfile,
+  handleRunBuildProfile,
+  resetBuildProfileForm,
 ) {
   const isGitLab = sourceRepositoryForm.provider === 'GITLAB'
   const tokenLabel = isGitLab ? 'GitLab password / access token' : 'GitHub password / access token'
-  const apiBaseLabel = isGitLab ? 'GitLab API URL' : 'GitHub API URL'
+  const isRegisterView = sourceRepositoryView === 'register'
 
   return (
     <section className="source-repository-panel">
       <div className="source-repository-header">
         <div>
-          <p className="eyebrow">CI/CD Sources</p>
-          <h2>Source repositories</h2>
+          <p className="eyebrow">CI/CD Workspace</p>
+          <h2>Pipeline designer</h2>
           <p>
-            Repositories registered for build and deployment workflows. Each
-            source becomes the entry point for future pipeline execution.
+            Select a source, define the build profile, preview the CI flow, and
+            prepare an execution request for platform-cicd.
           </p>
         </div>
         <div className="source-repository-actions">
           <span>{sourceRepositories.length} repos</span>
           <button
             className="panel-action"
-            onClick={() => setSourceRepositoryView(sourceRepositoryView === 'register' ? 'list' : 'register')}
+            onClick={() => {
+              setSourceRepositoryView(isRegisterView ? 'list' : 'register')
+              if (!isRegisterView) {
+                resetBuildProfileForm()
+              }
+            }}
             type="button"
           >
-            {sourceRepositoryView === 'register' ? '목록' : '등록'}
+            {isRegisterView ? '목록' : '등록'}
           </button>
         </div>
       </div>
@@ -775,156 +1138,433 @@ function renderSourceRepositoryPanel(
         </p>
       )}
 
-      {sourceRepositoryView === 'register' && (
-        <form className="source-repo-form" onSubmit={handleCreateSourceRepository}>
-          <label>
-            <span>Repository host</span>
-            <select
-              onChange={(event) => {
-                const provider = event.target.value
-                setSourceRepositoryForm((current) => ({
-                  ...current,
-                  provider,
-                  apiBaseUrl: provider === 'GITLAB' ? 'https://gitlab.com/api/v4' : 'https://api.github.com',
-                }))
-              }}
-              value={sourceRepositoryForm.provider}
-            >
-              <option value="GITHUB">GitHub</option>
-              <option value="GITLAB">GitLab</option>
-            </select>
-          </label>
-          <label>
-            <span>Visibility</span>
-            <select
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                visibility: event.target.value,
-              }))}
-              value={sourceRepositoryForm.visibility}
-            >
-              <option value="PUBLIC">Public</option>
-              <option value="PRIVATE">Private</option>
-            </select>
-          </label>
-          <label>
-            <span>Name</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({ ...current, name: event.target.value }))}
-              required
-              type="text"
-              value={sourceRepositoryForm.name}
-            />
-          </label>
-          <label className="wide-field">
-            <span>Repository URL</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                repositoryUrl: event.target.value,
-              }))}
-              required
-              type="url"
-              value={sourceRepositoryForm.repositoryUrl}
-            />
-          </label>
-          <label className="wide-field">
-            <span>{apiBaseLabel}</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                apiBaseUrl: event.target.value,
-              }))}
-              required
-              type="url"
-              value={sourceRepositoryForm.apiBaseUrl}
-            />
-          </label>
-          <label>
-            <span>Account</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                accountName: event.target.value,
-              }))}
-              required
-              type="text"
-              value={sourceRepositoryForm.accountName}
-            />
-          </label>
-          <label className="wide-field">
-            <span>{tokenLabel}</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                accessToken: event.target.value,
-              }))}
-              required
-              type="password"
-              value={sourceRepositoryForm.accessToken}
-            />
-          </label>
-          <label className="wide-field">
-            <span>Description</span>
-            <input
-              onChange={(event) => setSourceRepositoryForm((current) => ({
-                ...current,
-                description: event.target.value,
-              }))}
-              required
-              type="text"
-              value={sourceRepositoryForm.description}
-            />
-          </label>
-          <button disabled={sourceRepositoryState === 'submitting'} type="submit">Register source</button>
-        </form>
-      )}
+      {isRegisterView ? (
+        renderSourceRepositoryRegistrationForm(
+          sourceRepositoryForm,
+          setSourceRepositoryForm,
+          handleCreateSourceRepository,
+          sourceRepositoryState,
+          tokenLabel,
+        )
+      ) : (
+        <div className="cicd-designer-layout">
+          <aside className="cicd-sources-column" aria-label="Source repositories">
+            <div className="panel-heading">
+              <h3>Sources</h3>
+              <span>{sourceRepositories.length}</span>
+            </div>
 
-      {sourceRepositoryView === 'list' && (
-        <>
-          {sourceRepositoryState === 'loading' && <p className="muted">Loading source repositories...</p>}
-          {sourceRepositoryState !== 'loading' && sourceRepositories.length === 0 && (
-            <p className="muted">No source repositories registered.</p>
-          )}
+            {sourceRepositoryState === 'loading' && <p className="muted">Loading source repositories...</p>}
+            {sourceRepositoryState !== 'loading' && sourceRepositories.length === 0 && (
+              <p className="muted">No source repositories registered.</p>
+            )}
 
-          <div className="source-repository-list">
-            {sourceRepositories.map((repository) => (
-              <article className="source-repository-card" key={repository.id}>
-                <div className="source-repository-main">
-                  <div>
+            <div className="source-repository-list">
+              {sourceRepositories.map((repository) => (
+                <article
+                  className={
+                    selectedSourceRepository?.id === repository.id
+                      ? 'source-repository-card compact active'
+                      : 'source-repository-card compact'
+                  }
+                  key={repository.id}
+                  onClick={() => setSelectedSourceRepositoryId(repository.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      setSelectedSourceRepositoryId(repository.id)
+                    }
+                  }}
+                  role="button"
+                  tabIndex="0"
+                >
+                  <div className="source-repository-main">
                     <strong>{repository.name}</strong>
-                    <a href={repository.repositoryUrl} rel="noreferrer" target="_blank">
+                    <a
+                      href={repository.repositoryUrl}
+                      onClick={(event) => event.stopPropagation()}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
                       {repository.repositoryUrl}
                     </a>
                   </div>
-                  <span className="status-value neutral">{repository.provider || 'UNKNOWN'}</span>
-                </div>
-                <p>{repository.description}</p>
-                <div className="source-repository-stats">
-                  {renderStatusMetric('Clones', repository.cloneCount ?? 0)}
-                  {renderStatusMetric('Builds', repository.buildCount ?? 0)}
-                  {renderStatusMetric(
-                    'Last clone',
-                    repository.lastClonedAt ? new Date(repository.lastClonedAt).toLocaleString() : 'None',
-                  )}
-                </div>
-                <div className="source-repository-meta">
-                  <small>{repository.visibility}</small>
-                  <small>{repository.accountName || 'No account'}</small>
-                  <small>{repository.credentialConfigured ? 'Credential configured' : 'Credential missing'}</small>
+
+                  <div className="source-compact-meta">
+                    <span>{repository.provider || 'UNKNOWN'}</span>
+                    <span>{repository.visibility}</span>
+                    <span>{repository.accountName || 'No account'}</span>
+                    <span>{repository.credentialConfigured ? 'Auth saved' : 'Auth missing'}</span>
+                  </div>
+
+                  <div className="source-compact-stats">
+                    <span>{repository.cloneCount ?? 0} clones</span>
+                    <span>{repository.buildCount ?? 0} builds</span>
+                  </div>
+
                   <button
                     className="danger-action"
-                    onClick={() => handleDeleteSourceRepository(repository.id)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      handleDeleteSourceRepository(repository.id)
+                    }}
                     type="button"
                   >
                     제거
                   </button>
+                </article>
+              ))}
+            </div>
+          </aside>
+
+          <section className="pipeline-designer-panel" aria-label="Pipeline designer">
+            {!selectedSourceRepository && (
+              <div className="empty-designer-state">
+                <p className="eyebrow">Pipeline Designer</p>
+                <h3>Select a source repository</h3>
+                <p className="muted">Choose a source on the left to create build profiles and preview CI flow.</p>
+              </div>
+            )}
+
+            {selectedSourceRepository && (
+              <>
+                <div className="designer-summary">
+                  <div>
+                    <p className="eyebrow">Selected Source</p>
+                    <h3>{selectedSourceRepository.name}</h3>
+                    <a href={selectedSourceRepository.repositoryUrl} rel="noreferrer" target="_blank">
+                      {selectedSourceRepository.repositoryUrl}
+                    </a>
+                  </div>
+                  <div className="designer-badges">
+                    <span>{selectedSourceRepository.provider}</span>
+                    <span>{selectedSourceRepository.visibility}</span>
+                    <span>{selectedSourceRepository.credentialConfigured ? 'Password/token saved' : 'Auth missing'}</span>
+                  </div>
                 </div>
-              </article>
-            ))}
-          </div>
-        </>
+
+                <div className="pipeline-designer-grid">
+                  <section className="build-profile-list">
+                    <div className="panel-heading">
+                      <h3>Build profiles</h3>
+                      <span>{buildProfiles.length}</span>
+                    </div>
+
+                    {buildProfileState === 'loading' && <p className="muted">Loading build profiles...</p>}
+                    {buildProfileState !== 'loading' && buildProfiles.length === 0 && (
+                      <p className="muted">No build profiles saved.</p>
+                    )}
+
+                    {buildProfiles.map((profile) => (
+                      <article
+                        className={
+                          selectedBuildProfileId === profile.id
+                            ? 'build-profile-card active'
+                            : 'build-profile-card'
+                        }
+                        key={profile.id}
+                      >
+                        <div>
+                          <strong>{profile.name}</strong>
+                          <small>{profile.workingDirectory}</small>
+                        </div>
+                        <span className="status-value neutral">{profile.ciTool}</span>
+                        <p>{profile.description}</p>
+                        <code>{profile.script.split('\n')[0]}</code>
+                        <div className="profile-actions">
+                          <button onClick={() => setSelectedBuildProfileId(profile.id)} type="button">
+                            Select
+                          </button>
+                          <button onClick={() => handleEditBuildProfile(profile)} type="button">
+                            수정
+                          </button>
+                          <button
+                            className="danger-action"
+                            onClick={() => handleDeleteBuildProfile(profile.id)}
+                            type="button"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </section>
+
+                  <section className="pipeline-editor-stack">
+                    {renderPipelinePreview(buildProfileForm.ciTool)}
+
+                    <form className="build-profile-form" onSubmit={handleSaveBuildProfile}>
+                      <div className="panel-heading">
+                        <h3>{editingBuildProfileId ? 'Edit build profile' : 'New build profile'}</h3>
+                        {editingBuildProfileId && (
+                          <button className="secondary-action" onClick={resetBuildProfileForm} type="button">
+                            새 profile
+                          </button>
+                        )}
+                      </div>
+
+                      {buildProfileMessage && (
+                        <p className={buildProfileState === 'error' ? 'status-message' : 'success-message'}>
+                          {buildProfileMessage}
+                        </p>
+                      )}
+
+                      <div className="profile-form-grid">
+                        <label>
+                          <span>Name</span>
+                          <input
+                            onChange={(event) => setBuildProfileForm((current) => ({
+                              ...current,
+                              name: event.target.value,
+                            }))}
+                            required
+                            type="text"
+                            value={buildProfileForm.name}
+                          />
+                        </label>
+                        <label>
+                          <span>CI tool</span>
+                          <select
+                            onChange={(event) => handleSelectBuildProfileTool(event.target.value)}
+                            value={buildProfileForm.ciTool}
+                          >
+                            <option value="SHELL">Shell</option>
+                            <option value="JENKINS">Jenkins</option>
+                            <option value="GITHUB_ACTIONS">GitHub Actions</option>
+                            <option value="GITLAB_CI">GitLab CI</option>
+                          </select>
+                        </label>
+                        <label>
+                          <span>Working directory</span>
+                          <input
+                            onChange={(event) => setBuildProfileForm((current) => ({
+                              ...current,
+                              workingDirectory: event.target.value,
+                            }))}
+                            required
+                            type="text"
+                            value={buildProfileForm.workingDirectory}
+                          />
+                        </label>
+                        <label>
+                          <span>Description optional</span>
+                          <input
+                            onChange={(event) => setBuildProfileForm((current) => ({
+                              ...current,
+                              description: event.target.value,
+                            }))}
+                            type="text"
+                            value={buildProfileForm.description}
+                          />
+                        </label>
+                      </div>
+
+                      <label className="script-editor">
+                        <span>Build script</span>
+                        <textarea
+                          onChange={(event) => setBuildProfileForm((current) => ({
+                            ...current,
+                            script: event.target.value,
+                          }))}
+                          required
+                          rows="14"
+                          value={buildProfileForm.script}
+                        />
+                      </label>
+
+                      <button disabled={buildProfileState === 'submitting'} type="submit">
+                        {editingBuildProfileId ? 'Update profile' : 'Save profile'}
+                      </button>
+                    </form>
+                  </section>
+                </div>
+              </>
+            )}
+          </section>
+
+          <aside className="run-panel" aria-label="Run build profile">
+            <p className="eyebrow">Run Panel</p>
+            <h3>Build execution</h3>
+
+            {!selectedSourceRepository && <p className="muted">Select a source repository first.</p>}
+
+            {selectedSourceRepository && !selectedBuildProfile && (
+              <p className="muted">Save a build profile before running a build.</p>
+            )}
+
+            {selectedSourceRepository && selectedBuildProfile && (
+              <>
+                <div className="run-target">
+                  <span>Selected profile</span>
+                  <strong>{selectedBuildProfile.name}</strong>
+                  <small>{selectedBuildProfile.ciTool} / {selectedBuildProfile.workingDirectory}</small>
+                </div>
+
+                {renderPipelinePreview(selectedBuildProfile.ciTool, 'compact')}
+
+                <div className="run-parameter-grid">
+                  <label>
+                    <span>Requested by</span>
+                    <input
+                      onChange={(event) => setBuildProfileForm((current) => ({
+                        ...current,
+                        requestedBy: event.target.value,
+                      }))}
+                      required
+                      type="text"
+                      value={buildProfileForm.requestedBy}
+                    />
+                  </label>
+                  <label>
+                    <span>Image tag</span>
+                    <input
+                      onChange={(event) => setBuildProfileForm((current) => ({
+                        ...current,
+                        imageTag: event.target.value,
+                      }))}
+                      required
+                      type="text"
+                      value={buildProfileForm.imageTag}
+                    />
+                  </label>
+                </div>
+
+                <button
+                  className="run-action"
+                  disabled={buildProfileState === 'submitting'}
+                  onClick={() => handleRunBuildProfile(selectedBuildProfile)}
+                  type="button"
+                >
+                  Run build
+                </button>
+              </>
+            )}
+          </aside>
+        </div>
       )}
+    </section>
+  )
+}
+
+function renderSourceRepositoryRegistrationForm(
+  sourceRepositoryForm,
+  setSourceRepositoryForm,
+  handleCreateSourceRepository,
+  sourceRepositoryState,
+  tokenLabel,
+) {
+  return (
+    <form className="source-repo-form" onSubmit={handleCreateSourceRepository}>
+      <label>
+        <span>Repository host</span>
+        <select
+          onChange={(event) => {
+            const provider = event.target.value
+            setSourceRepositoryForm((current) => ({
+              ...current,
+              provider,
+            }))
+          }}
+          value={sourceRepositoryForm.provider}
+        >
+          <option value="GITHUB">GitHub</option>
+          <option value="GITLAB">GitLab</option>
+        </select>
+      </label>
+      <label>
+        <span>Visibility</span>
+        <select
+          onChange={(event) => setSourceRepositoryForm((current) => ({
+            ...current,
+            visibility: event.target.value,
+          }))}
+          value={sourceRepositoryForm.visibility}
+        >
+          <option value="PUBLIC">Public</option>
+          <option value="PRIVATE">Private</option>
+        </select>
+      </label>
+      <label>
+        <span>Name</span>
+        <input
+          onChange={(event) => setSourceRepositoryForm((current) => ({ ...current, name: event.target.value }))}
+          required
+          type="text"
+          value={sourceRepositoryForm.name}
+        />
+      </label>
+      <label className="wide-field">
+        <span>Repository URL</span>
+        <input
+          onChange={(event) => setSourceRepositoryForm((current) => ({
+            ...current,
+            repositoryUrl: event.target.value,
+          }))}
+          required
+          type="url"
+          value={sourceRepositoryForm.repositoryUrl}
+        />
+      </label>
+      <label>
+        <span>Account</span>
+        <input
+          onChange={(event) => setSourceRepositoryForm((current) => ({
+            ...current,
+            accountName: event.target.value,
+          }))}
+          required
+          type="text"
+          value={sourceRepositoryForm.accountName}
+        />
+      </label>
+      <label className="wide-field">
+        <span>{tokenLabel}</span>
+        <input
+          onChange={(event) => setSourceRepositoryForm((current) => ({
+            ...current,
+            accessToken: event.target.value,
+          }))}
+          required
+          type="password"
+          value={sourceRepositoryForm.accessToken}
+        />
+      </label>
+      <label className="wide-field">
+        <span>Description optional</span>
+        <input
+          onChange={(event) => setSourceRepositoryForm((current) => ({
+            ...current,
+            description: event.target.value,
+          }))}
+          type="text"
+          value={sourceRepositoryForm.description}
+        />
+      </label>
+      <button disabled={sourceRepositoryState === 'submitting'} type="submit">Register source</button>
+    </form>
+  )
+}
+
+function renderPipelinePreview(ciTool, density = 'default') {
+  const preview = PIPELINE_PREVIEWS[ciTool] ?? PIPELINE_PREVIEWS.SHELL
+
+  return (
+    <section className={density === 'compact' ? 'pipeline-preview compact' : 'pipeline-preview'}>
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">{preview.label}</p>
+          <h3>{preview.unit}</h3>
+        </div>
+      </div>
+      <div className="pipeline-stage-flow">
+        {preview.stages.map((stage, index) => (
+          <div className="pipeline-stage" key={`${stage.name}-${index}`}>
+            <span>{index + 1}</span>
+            <strong>{stage.name}</strong>
+            <small>{stage.detail}</small>
+          </div>
+        ))}
+      </div>
+      <p className="pipeline-preview-note">Template preview only. It is not parsed from the saved script.</p>
     </section>
   )
 }

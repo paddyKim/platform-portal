@@ -9,13 +9,16 @@ import org.springframework.transaction.annotation.Transactional;
 public class SourceRepositoryService {
 
     private final SourceRepositoryRepository sourceRepositoryRepository;
+    private final BuildProfileRepository buildProfileRepository;
     private final SourceRepositoryCredentialService credentialService;
 
     public SourceRepositoryService(
             SourceRepositoryRepository sourceRepositoryRepository,
+            BuildProfileRepository buildProfileRepository,
             SourceRepositoryCredentialService credentialService
     ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
+        this.buildProfileRepository = buildProfileRepository;
         this.credentialService = credentialService;
     }
 
@@ -25,6 +28,14 @@ public class SourceRepositoryService {
                 .sorted(Comparator.comparing(SourceRepository::getCreatedAt).reversed())
                 .map(SourceRepositoryResponse::from)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public SourceRepositoryResponse getRepository(Long id) {
+        SourceRepository repository = sourceRepositoryRepository.findById(id)
+                .orElseThrow(() -> new SourceRepositoryNotFoundException(id));
+
+        return SourceRepositoryResponse.from(repository);
     }
 
     @Transactional
@@ -45,14 +56,29 @@ public class SourceRepositoryService {
                 request.provider(),
                 request.visibility(),
                 repositoryUrl,
-                request.apiBaseUrl().trim(),
+                apiBaseUrl(request),
                 request.accountName().trim(),
                 encryptedAccessToken,
                 "",
-                request.description().trim()
+                description(request)
         ));
 
         return SourceRepositoryResponse.from(repository);
+    }
+
+    private static String description(SourceRepositoryCreateRequest request) {
+        return request.description() == null ? "" : request.description().trim();
+    }
+
+    private static String apiBaseUrl(SourceRepositoryCreateRequest request) {
+        if (request.apiBaseUrl() != null && !request.apiBaseUrl().isBlank()) {
+            return request.apiBaseUrl().trim();
+        }
+
+        return switch (request.provider()) {
+            case GITLAB -> "https://gitlab.com/api/v4";
+            case GITHUB -> "https://api.github.com";
+        };
     }
 
     @Transactional
@@ -61,6 +87,7 @@ public class SourceRepositoryService {
             throw new SourceRepositoryNotFoundException(id);
         }
 
+        buildProfileRepository.deleteBySourceRepositoryId(id);
         sourceRepositoryRepository.deleteById(id);
     }
 }

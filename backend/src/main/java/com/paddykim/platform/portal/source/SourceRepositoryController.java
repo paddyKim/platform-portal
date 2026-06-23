@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,19 +22,27 @@ import org.springframework.web.bind.annotation.RestController;
 public class SourceRepositoryController {
 
     private final SourceRepositoryService sourceRepositoryService;
+    private final BuildProfileService buildProfileService;
     private final SourceRepositoryCredentialService credentialService;
 
     public SourceRepositoryController(
             SourceRepositoryService sourceRepositoryService,
+            BuildProfileService buildProfileService,
             SourceRepositoryCredentialService credentialService
     ) {
         this.sourceRepositoryService = sourceRepositoryService;
+        this.buildProfileService = buildProfileService;
         this.credentialService = credentialService;
     }
 
     @GetMapping
     public List<SourceRepositoryResponse> listRepositories() {
         return sourceRepositoryService.listRepositories();
+    }
+
+    @GetMapping("/{id}")
+    public SourceRepositoryResponse getRepository(@PathVariable Long id) {
+        return sourceRepositoryService.getRepository(id);
     }
 
     @GetMapping("/credential-public-key")
@@ -55,6 +64,55 @@ public class SourceRepositoryController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/{repositoryId}/build-profiles")
+    public List<BuildProfileResponse> listBuildProfiles(@PathVariable Long repositoryId) {
+        return buildProfileService.listBuildProfiles(repositoryId);
+    }
+
+    @PostMapping("/{repositoryId}/build-profiles")
+    public ResponseEntity<BuildProfileResponse> createBuildProfile(
+            @PathVariable Long repositoryId,
+            @Valid @RequestBody BuildProfileRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(buildProfileService.createBuildProfile(repositoryId, request));
+    }
+
+    @GetMapping("/{repositoryId}/build-profiles/{profileId}")
+    public BuildProfileResponse getBuildProfile(
+            @PathVariable Long repositoryId,
+            @PathVariable Long profileId
+    ) {
+        return buildProfileService.getBuildProfile(repositoryId, profileId);
+    }
+
+    @PutMapping("/{repositoryId}/build-profiles/{profileId}")
+    public BuildProfileResponse updateBuildProfile(
+            @PathVariable Long repositoryId,
+            @PathVariable Long profileId,
+            @Valid @RequestBody BuildProfileRequest request
+    ) {
+        return buildProfileService.updateBuildProfile(repositoryId, profileId, request);
+    }
+
+    @DeleteMapping("/{repositoryId}/build-profiles/{profileId}")
+    public ResponseEntity<Void> deleteBuildProfile(
+            @PathVariable Long repositoryId,
+            @PathVariable Long profileId
+    ) {
+        buildProfileService.deleteBuildProfile(repositoryId, profileId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{repositoryId}/build-profiles/{profileId}/run")
+    public BuildProfileRunResponse runBuildProfile(
+            @PathVariable Long repositoryId,
+            @PathVariable Long profileId,
+            @Valid @RequestBody BuildProfileRunRequest request
+    ) {
+        return buildProfileService.prepareBuildProfileRun(repositoryId, profileId, request);
+    }
+
     @ExceptionHandler(SourceRepositoryValidationException.class)
     ResponseEntity<ErrorResponse> handleValidation(SourceRepositoryValidationException exception) {
         return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
@@ -62,6 +120,11 @@ public class SourceRepositoryController {
 
     @ExceptionHandler(SourceRepositoryNotFoundException.class)
     ResponseEntity<ErrorResponse> handleNotFound(SourceRepositoryNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler(BuildProfileNotFoundException.class)
+    ResponseEntity<ErrorResponse> handleBuildProfileNotFound(BuildProfileNotFoundException exception) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new ErrorResponse(exception.getMessage()));
     }
 
