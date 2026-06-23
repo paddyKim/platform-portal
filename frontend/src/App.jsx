@@ -168,6 +168,7 @@ function App() {
   const [selectedSourceRepositoryId, setSelectedSourceRepositoryId] = useState(null)
   const [buildProfiles, setBuildProfiles] = useState([])
   const [selectedBuildProfileId, setSelectedBuildProfileId] = useState(null)
+  const [lastBuildExecution, setLastBuildExecution] = useState(null)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
   const [cicdRequests, setCicdRequests] = useState([])
@@ -367,6 +368,7 @@ function App() {
     if (!selectedSourceRepositoryId) {
       setBuildProfiles([])
       setSelectedBuildProfileId(null)
+      setLastBuildExecution(null)
       setBuildProfileState('idle')
       setBuildProfileMessage('')
       return
@@ -377,6 +379,7 @@ function App() {
     async function loadBuildProfiles() {
       setBuildProfileState('loading')
       setBuildProfileMessage('')
+      setLastBuildExecution(null)
 
       try {
         const data = await fetchJson(`/api/source-repositories/${selectedSourceRepositoryId}/build-profiles`)
@@ -762,8 +765,11 @@ function App() {
 
     setBuildProfileState('submitting')
     setBuildProfileMessage('')
+    setLastBuildExecution(null)
 
     try {
+      const environment = applicationDetail?.environments?.[0]
+      const component = environment?.components?.[0]
       const result = await fetchJson(
         `/api/source-repositories/${selectedSourceRepositoryId}/build-profiles/${profile.id}/run`,
         {
@@ -774,10 +780,14 @@ function App() {
           body: JSON.stringify({
             requestedBy: buildProfileForm.requestedBy,
             imageTag: buildProfileForm.imageTag,
+            applicationName: applicationDetail?.name || selectedSourceRepository?.name,
+            environment: environment?.environment || 'dev',
+            componentName: component?.name || selectedSourceRepository?.name,
           }),
         },
       )
       setBuildProfileMessage(`${result.status}: ${result.statusMessage}`)
+      setLastBuildExecution(result)
       setBuildProfileState('ready')
     } catch (error) {
       setBuildProfileMessage(error.message)
@@ -901,6 +911,7 @@ function App() {
             setBuildProfileForm,
             buildProfileState,
             buildProfileMessage,
+            lastBuildExecution,
             editingBuildProfileId,
             handleSelectBuildProfileTool,
             handleSaveBuildProfile,
@@ -1092,6 +1103,7 @@ function renderSourceRepositoryPanel(
   setBuildProfileForm,
   buildProfileState,
   buildProfileMessage,
+  lastBuildExecution,
   editingBuildProfileId,
   handleSelectBuildProfileTool,
   handleSaveBuildProfile,
@@ -1436,6 +1448,38 @@ function renderSourceRepositoryPanel(
                 >
                   Run build
                 </button>
+
+                {lastBuildExecution && (
+                  <section className="execution-result" aria-label="Last build execution result">
+                    <div className="execution-result-heading">
+                      <div>
+                        <p className="eyebrow">Latest Execution</p>
+                        <h4>#{lastBuildExecution.executionId || 'Pending'}</h4>
+                      </div>
+                      <strong className={`status-value ${statusTone(lastBuildExecution.status)}`}>
+                        {lastBuildExecution.status}
+                      </strong>
+                    </div>
+
+                    <dl className="execution-facts">
+                      <div>
+                        <dt>Exit code</dt>
+                        <dd>{lastBuildExecution.exitCode ?? 'None'}</dd>
+                      </div>
+                      <div>
+                        <dt>Started</dt>
+                        <dd>{formatDateTime(lastBuildExecution.startedAt)}</dd>
+                      </div>
+                      <div>
+                        <dt>Finished</dt>
+                        <dd>{formatDateTime(lastBuildExecution.finishedAt)}</dd>
+                      </div>
+                    </dl>
+
+                    <p className="execution-message">{lastBuildExecution.statusMessage}</p>
+                    <pre>{lastBuildExecution.logSummary || 'No log output captured.'}</pre>
+                  </section>
+                )}
               </>
             )}
           </aside>
@@ -1881,19 +1925,27 @@ function renderStatusMetric(label, value, tone = 'neutral') {
 }
 
 function statusTone(value) {
-  if (['Synced', 'Healthy', 'Succeeded', 'READY'].includes(value)) {
+  if (['Synced', 'Healthy', 'Succeeded', 'SUCCEEDED', 'READY'].includes(value)) {
     return 'good'
   }
 
-  if (['OutOfSync', 'Progressing', 'Running', 'PROGRESSING', 'WARNING'].includes(value)) {
+  if (['OutOfSync', 'Progressing', 'Running', 'RUNNING', 'REQUESTED', 'DISPATCHED', 'PROGRESSING', 'WARNING'].includes(value)) {
     return 'pending'
   }
 
-  if (['Degraded', 'Failed', 'Error', 'Missing', 'MISSING'].includes(value)) {
+  if (['Degraded', 'Failed', 'FAILED', 'Error', 'Missing', 'MISSING'].includes(value)) {
     return 'bad'
   }
 
   return 'neutral'
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return 'None'
+  }
+
+  return new Date(value).toLocaleString()
 }
 
 function renderPodSummary(pods) {

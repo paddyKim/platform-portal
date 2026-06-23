@@ -13,13 +13,16 @@ public class BuildProfileService {
 
     private final SourceRepositoryRepository sourceRepositoryRepository;
     private final BuildProfileRepository buildProfileRepository;
+    private final PlatformCicdExecutionClient platformCicdExecutionClient;
 
     public BuildProfileService(
             SourceRepositoryRepository sourceRepositoryRepository,
-            BuildProfileRepository buildProfileRepository
+            BuildProfileRepository buildProfileRepository,
+            PlatformCicdExecutionClient platformCicdExecutionClient
     ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
         this.buildProfileRepository = buildProfileRepository;
+        this.platformCicdExecutionClient = platformCicdExecutionClient;
     }
 
     @Transactional(readOnly = true)
@@ -88,22 +91,39 @@ public class BuildProfileService {
             BuildProfileRunRequest request
     ) {
         BuildProfile buildProfile = findBuildProfile(sourceRepositoryId, buildProfileId);
+        SourceRepository sourceRepository = buildProfile.getSourceRepository();
         String requestedBy = request.requestedBy().trim();
         String imageTag = request.imageTag().trim();
+        Long portalRequestId = Instant.now().toEpochMilli();
+        PlatformCicdExecutionResponse execution = platformCicdExecutionClient.createExecution(
+                new PlatformCicdExecutionCreateRequest(
+                        portalRequestId,
+                        textOrDefault(request.applicationName(), sourceRepository.getName()),
+                        textOrDefault(request.environment(), "dev"),
+                        textOrDefault(request.componentName(), sourceRepository.getName()),
+                        "BUILD_IMAGE",
+                        imageTag,
+                        requestedBy,
+                        sourceRepositoryId,
+                        buildProfileId,
+                        buildProfile.getCiTool().name(),
+                        sourceRepository.getRepositoryUrl(),
+                        buildProfile.getWorkingDirectory(),
+                        buildProfile.getScript()
+                )
+        );
 
-        return new BuildProfileRunResponse(
+        return BuildProfileRunResponse.from(
                 sourceRepositoryId,
                 buildProfileId,
-                buildProfile.getSourceRepository().getName(),
-                buildProfile.getSourceRepository().getRepositoryUrl(),
+                sourceRepository.getName(),
+                sourceRepository.getRepositoryUrl(),
                 buildProfile.getCiTool(),
                 buildProfile.getWorkingDirectory(),
                 requestedBy,
                 imageTag,
                 "platform-cicd-http",
-                "DISPATCHED",
-                "Build profile execution payload prepared for platform-cicd",
-                Instant.now()
+                execution
         );
     }
 
@@ -140,6 +160,14 @@ public class BuildProfileService {
         } catch (InvalidPathException exception) {
             throw new SourceRepositoryValidationException("Build profile workingDirectory is invalid");
         }
+    }
+
+    private static String textOrDefault(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+
+        return value.trim();
     }
 
     private record BuildProfileValues(

@@ -603,6 +603,73 @@ h4 {
   cursor: not-allowed;
 }
 
+.execution-result {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe3e8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.execution-result-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.execution-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.execution-facts div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid #e1e7eb;
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.execution-facts dt {
+  color: #60737d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.execution-facts dd {
+  margin: 0;
+  color: #24333b;
+  font-size: 0.82rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.execution-message {
+  margin-bottom: 0;
+  color: #24333b;
+  font-weight: 800;
+}
+
+.execution-result pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: #172026;
+  color: #e8f3f4;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .source-detail-summary,
 .build-profile-list,
 .build-profile-form {

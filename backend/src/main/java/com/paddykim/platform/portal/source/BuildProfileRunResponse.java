@@ -5,6 +5,8 @@ import java.time.Instant;
 public record BuildProfileRunResponse(
         Long sourceRepositoryId,
         Long buildProfileId,
+        Long executionId,
+        Long portalRequestId,
         String repositoryName,
         String repositoryUrl,
         BuildProfileCiTool ciTool,
@@ -14,6 +16,44 @@ public record BuildProfileRunResponse(
         String dispatchTarget,
         String status,
         String statusMessage,
+        Integer exitCode,
+        String logSummary,
+        Instant startedAt,
+        Instant finishedAt,
         Instant createdAt
 ) {
+
+    static BuildProfileRunResponse from(
+            Long sourceRepositoryId,
+            Long buildProfileId,
+            String repositoryName,
+            String repositoryUrl,
+            BuildProfileCiTool ciTool,
+            String workingDirectory,
+            String requestedBy,
+            String imageTag,
+            String dispatchTarget,
+            PlatformCicdExecutionResponse execution
+    ) {
+        return new BuildProfileRunResponse(
+                sourceRepositoryId,
+                buildProfileId,
+                execution.executionId(),
+                execution.portalRequestId(),
+                repositoryName,
+                repositoryUrl,
+                ciTool,
+                workingDirectory,
+                requestedBy,
+                imageTag,
+                dispatchTarget,
+                execution.status(),
+                execution.statusMessage(),
+                execution.exitCode(),
+                execution.logSummary(),
+                execution.startedAt(),
+                execution.finishedAt(),
+                execution.createdAt()
+        );
+    }
 }

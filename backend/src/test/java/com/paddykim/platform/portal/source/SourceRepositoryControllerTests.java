@@ -17,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -297,7 +300,11 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$.requestedBy", is("platform-operator")))
                 .andExpect(jsonPath("$.imageTag", is("day21-test")))
                 .andExpect(jsonPath("$.dispatchTarget", is("platform-cicd-http")))
-                .andExpect(jsonPath("$.status", is("DISPATCHED")));
+                .andExpect(jsonPath("$.executionId", is(1001)))
+                .andExpect(jsonPath("$.status", is("SUCCEEDED")))
+                .andExpect(jsonPath("$.statusMessage", is("Shell script completed with exit code 0")))
+                .andExpect(jsonPath("$.exitCode", is(0)))
+                .andExpect(jsonPath("$.logSummary", containsString("fake shell execution")));
     }
 
     @Test
@@ -353,5 +360,25 @@ class SourceRepositoryControllerTests {
                 "",
                 "Source repository for tests"
         );
+    }
+
+    @TestConfiguration
+    static class TestPlatformCicdExecutionClientConfig {
+
+        @Bean
+        @Primary
+        PlatformCicdExecutionClient testPlatformCicdExecutionClient() {
+            return request -> new PlatformCicdExecutionResponse(
+                    1001L,
+                    request.portalRequestId(),
+                    "SUCCEEDED",
+                    "Shell script completed with exit code 0",
+                    0,
+                    "fake shell execution for " + request.repositoryUrl(),
+                    java.time.Instant.parse("2026-06-23T00:00:00Z"),
+                    java.time.Instant.parse("2026-06-23T00:00:01Z"),
+                    java.time.Instant.parse("2026-06-23T00:00:00Z")
+            );
+        }
     }
 }
