@@ -5,6 +5,8 @@ import java.time.Instant;
 public record BuildProfileRunResponse(
         Long sourceRepositoryId,
         Long buildProfileId,
+        String buildProfileName,
+        Long historyId,
         Long executionId,
         Long portalRequestId,
         String repositoryName,
@@ -30,6 +32,7 @@ public record BuildProfileRunResponse(
     static BuildProfileRunResponse from(
             Long sourceRepositoryId,
             Long buildProfileId,
+            String buildProfileName,
             String repositoryName,
             String repositoryUrl,
             BuildProfileCiTool ciTool,
@@ -38,11 +41,14 @@ public record BuildProfileRunResponse(
             String imageTag,
             String branch,
             String dispatchTarget,
+            Long historyId,
             PlatformCicdExecutionResponse execution
     ) {
         return new BuildProfileRunResponse(
                 sourceRepositoryId,
                 buildProfileId,
+                buildProfileName,
+                historyId,
                 execution.executionId(),
                 execution.portalRequestId(),
                 repositoryName,
@@ -63,6 +69,50 @@ public record BuildProfileRunResponse(
                 execution.startedAt(),
                 execution.finishedAt(),
                 execution.createdAt()
+        );
+    }
+
+    static BuildProfileRunResponse failed(
+            Long sourceRepositoryId,
+            Long buildProfileId,
+            String buildProfileName,
+            Long historyId,
+            String repositoryName,
+            String repositoryUrl,
+            BuildProfileCiTool ciTool,
+            String workingDirectory,
+            String requestedBy,
+            String imageTag,
+            String branch,
+            String dispatchTarget,
+            Long portalRequestId,
+            String statusMessage
+    ) {
+        return new BuildProfileRunResponse(
+                sourceRepositoryId,
+                buildProfileId,
+                buildProfileName,
+                historyId,
+                null,
+                portalRequestId,
+                repositoryName,
+                repositoryUrl,
+                ciTool,
+                workingDirectory,
+                requestedBy,
+                imageTag,
+                branch,
+                dispatchTarget,
+                "FAILED",
+                statusMessage,
+                null,
+                null,
+                null,
+                null,
+                "",
+                null,
+                null,
+                java.time.Instant.now()
         );
     }
 }

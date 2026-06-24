@@ -169,10 +169,10 @@ function App() {
   const [buildProfiles, setBuildProfiles] = useState([])
   const [selectedBuildProfileId, setSelectedBuildProfileId] = useState(null)
   const [lastBuildExecution, setLastBuildExecution] = useState(null)
+  const [buildExecutions, setBuildExecutions] = useState([])
+  const [selectedBuildExecutionId, setSelectedBuildExecutionId] = useState(null)
   const [environmentStatuses, setEnvironmentStatuses] = useState({})
   const [runtimeStatuses, setRuntimeStatuses] = useState({})
-  const [cicdRequests, setCicdRequests] = useState([])
-  const [auditEvents, setAuditEvents] = useState([])
   const [sourceRepositoryForm, setSourceRepositoryForm] = useState({
     name: '',
     provider: 'GITHUB',
@@ -193,23 +193,16 @@ function App() {
     branch: 'main',
   })
   const [editingBuildProfileId, setEditingBuildProfileId] = useState(null)
-  const [cicdForm, setCicdForm] = useState({
-    environment: '',
-    componentId: '',
-    requestType: 'BUILD_IMAGE',
-    requestedValue: '',
-    requestedBy: 'platform-operator',
-  })
   const [catalogState, setCatalogState] = useState('loading')
   const [detailState, setDetailState] = useState('idle')
   const [statusState, setStatusState] = useState('idle')
   const [runtimeState, setRuntimeState] = useState('idle')
-  const [cicdState, setCicdState] = useState('idle')
   const [sourceRepositoryState, setSourceRepositoryState] = useState('loading')
   const [buildProfileState, setBuildProfileState] = useState('idle')
+  const [buildExecutionState, setBuildExecutionState] = useState('idle')
   const [sourceRepositoryMessage, setSourceRepositoryMessage] = useState('')
   const [buildProfileMessage, setBuildProfileMessage] = useState('')
-  const [cicdMessage, setCicdMessage] = useState('')
+  const [buildExecutionMessage, setBuildExecutionMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -334,44 +327,16 @@ function App() {
   }, [])
 
   useEffect(() => {
-    let ignore = false
-
-    async function loadCicdData() {
-      setCicdState('loading')
-
-      try {
-        const [requests, events] = await Promise.all([
-          fetchJson('/api/cicd/requests'),
-          fetchJson('/api/audit-events'),
-        ])
-
-        if (!ignore) {
-          setCicdRequests(requests)
-          setAuditEvents(events)
-          setCicdState('ready')
-        }
-      } catch (error) {
-        if (!ignore) {
-          setCicdMessage(error.message)
-          setCicdState('error')
-        }
-      }
-    }
-
-    loadCicdData()
-
-    return () => {
-      ignore = true
-    }
-  }, [])
-
-  useEffect(() => {
     if (!selectedSourceRepositoryId) {
       setBuildProfiles([])
       setSelectedBuildProfileId(null)
       setLastBuildExecution(null)
+      setBuildExecutions([])
+      setSelectedBuildExecutionId(null)
       setBuildProfileState('idle')
       setBuildProfileMessage('')
+      setBuildExecutionState('idle')
+      setBuildExecutionMessage('')
       return
     }
 
@@ -381,6 +346,8 @@ function App() {
       setBuildProfileState('loading')
       setBuildProfileMessage('')
       setLastBuildExecution(null)
+      setBuildExecutions([])
+      setSelectedBuildExecutionId(null)
 
       try {
         const data = await fetchJson(`/api/source-repositories/${selectedSourceRepositoryId}/build-profiles`)
@@ -413,6 +380,47 @@ function App() {
       setSelectedBuildProfileId(buildProfiles[0].id)
     }
   }, [buildProfiles, selectedBuildProfileId])
+
+  useEffect(() => {
+    if (!selectedSourceRepositoryId || !selectedBuildProfileId) {
+      setBuildExecutions([])
+      setSelectedBuildExecutionId(null)
+      setBuildExecutionState('idle')
+      setBuildExecutionMessage('')
+      return
+    }
+
+    let ignore = false
+
+    async function loadBuildExecutions() {
+      setBuildExecutionState('loading')
+      setBuildExecutionMessage('')
+
+      try {
+        const data = await fetchJson(
+          `/api/source-repositories/${selectedSourceRepositoryId}/build-profiles/${selectedBuildProfileId}/executions`,
+        )
+        if (!ignore) {
+          setBuildExecutions(data)
+          setSelectedBuildExecutionId((current) => (
+            data.some((execution) => execution.id === current) ? current : data[0]?.id ?? null
+          ))
+          setBuildExecutionState('ready')
+        }
+      } catch (error) {
+        if (!ignore) {
+          setBuildExecutionMessage(error.message)
+          setBuildExecutionState('error')
+        }
+      }
+    }
+
+    loadBuildExecutions()
+
+    return () => {
+      ignore = true
+    }
+  }, [selectedSourceRepositoryId, selectedBuildProfileId])
 
   useEffect(() => {
     if (!applicationDetail) {
@@ -465,24 +473,6 @@ function App() {
     return () => {
       ignore = true
     }
-  }, [applicationDetail])
-
-  useEffect(() => {
-    if (!applicationDetail) {
-      setCicdForm((current) => ({
-        ...current,
-        environment: '',
-        componentId: '',
-      }))
-      return
-    }
-
-    const environment = applicationDetail.environments[0]
-    setCicdForm((current) => ({
-      ...current,
-      environment: environment?.environment ?? '',
-      componentId: environment?.components[0]?.id?.toString() ?? '',
-    }))
   }, [applicationDetail])
 
   useEffect(() => {
@@ -555,14 +545,10 @@ function App() {
     [buildProfiles, selectedBuildProfileId],
   )
 
-  async function reloadCicdData() {
-    const [requests, events] = await Promise.all([
-      fetchJson('/api/cicd/requests'),
-      fetchJson('/api/audit-events'),
-    ])
-    setCicdRequests(requests)
-    setAuditEvents(events)
-  }
+  const selectedBuildExecution = useMemo(
+    () => buildExecutions.find((execution) => execution.id === selectedBuildExecutionId),
+    [buildExecutions, selectedBuildExecutionId],
+  )
 
   async function reloadSourceRepositories() {
     const repositories = await fetchJson('/api/source-repositories')
@@ -577,6 +563,29 @@ function App() {
 
     const profiles = await fetchJson(`/api/source-repositories/${repositoryId}/build-profiles`)
     setBuildProfiles(profiles)
+  }
+
+  async function reloadBuildExecutions(
+    repositoryId = selectedSourceRepositoryId,
+    profileId = selectedBuildProfileId,
+    options = {},
+  ) {
+    if (!repositoryId || !profileId) {
+      setBuildExecutions([])
+      setSelectedBuildExecutionId(null)
+      return
+    }
+
+    const executions = await fetchJson(`/api/source-repositories/${repositoryId}/build-profiles/${profileId}/executions`)
+    setBuildExecutions(executions)
+    if (options.selectLatest) {
+      setSelectedBuildExecutionId(executions[0]?.id ?? null)
+      return
+    }
+
+    setSelectedBuildExecutionId((current) => (
+      executions.some((execution) => execution.id === current) ? current : executions[0]?.id ?? null
+    ))
   }
 
   function resetBuildProfileForm() {
@@ -677,6 +686,8 @@ function App() {
         setSelectedSourceRepositoryId(null)
         setSourceRepositoryView('list')
         setBuildProfiles([])
+        setBuildExecutions([])
+        setSelectedBuildExecutionId(null)
         resetBuildProfileForm()
       }
       await reloadSourceRepositories()
@@ -752,6 +763,10 @@ function App() {
       if (editingBuildProfileId === profileId) {
         resetBuildProfileForm()
       }
+      if (selectedBuildProfileId === profileId) {
+        setBuildExecutions([])
+        setSelectedBuildExecutionId(null)
+      }
       setBuildProfileMessage('Build profile deleted')
       setBuildProfileState('ready')
     } catch (error) {
@@ -792,47 +807,11 @@ function App() {
       setBuildProfileMessage(`${result.status}: ${result.statusMessage}`)
       setLastBuildExecution(result)
       await reloadSourceRepositories()
+      await reloadBuildExecutions(selectedSourceRepositoryId, profile.id, { selectLatest: true })
       setBuildProfileState('ready')
     } catch (error) {
       setBuildProfileMessage(error.message)
       setBuildProfileState('error')
-    }
-  }
-
-  async function handleCreateCicdRequest(event) {
-    event.preventDefault()
-    if (!applicationDetail) {
-      return
-    }
-
-    setCicdState('submitting')
-    setCicdMessage('')
-
-    try {
-      await fetchJson('/api/cicd/requests', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          applicationId: applicationDetail.id,
-          environment: cicdForm.environment,
-          componentId: Number(cicdForm.componentId),
-          requestType: cicdForm.requestType,
-          requestedValue: cicdForm.requestedValue,
-          requestedBy: cicdForm.requestedBy,
-        }),
-      })
-      setCicdForm((current) => ({
-        ...current,
-        requestedValue: '',
-      }))
-      await reloadCicdData()
-      setCicdMessage('CI/CD request recorded')
-      setCicdState('ready')
-    } catch (error) {
-      setCicdMessage(error.message)
-      setCicdState('error')
     }
   }
 
@@ -916,6 +895,11 @@ function App() {
             buildProfileState,
             buildProfileMessage,
             lastBuildExecution,
+            buildExecutions,
+            selectedBuildExecution,
+            setSelectedBuildExecutionId,
+            buildExecutionState,
+            buildExecutionMessage,
             editingBuildProfileId,
             handleSelectBuildProfileTool,
             handleSaveBuildProfile,
@@ -925,43 +909,6 @@ function App() {
             resetBuildProfileForm,
           )}
 
-          {detailState === 'loading' && <p className="muted">Loading CI/CD context...</p>}
-          {detailState === 'ready' && applicationDetail && (
-            <section className="detail-panel cicd-detail-panel" aria-label="CI/CD request detail">
-              <header className="detail-header">
-                <div>
-                  <p className="eyebrow">Pipeline Requests</p>
-                  <h2>{applicationDetail.name}</h2>
-                  <p>
-                    Build and deployment requests for the selected application.
-                    The portal records requests and audit history; execution is
-                    delegated to platform-cicd in the next integration step.
-                  </p>
-                </div>
-                <a href={applicationDetail.repositoryUrl} rel="noreferrer" target="_blank">
-                  Repository
-                </a>
-              </header>
-
-              <div className="metadata-grid compact">
-                {renderMetadata('Owner', applicationDetail.owner)}
-                {renderMetadata('Repository', applicationDetail.repositoryUrl)}
-                {renderMetadata('Selected App', selectedApplication?.name || applicationDetail.name)}
-                {renderMetadata('Request Target', 'platform-cicd')}
-              </div>
-
-              {renderCicdControlPanel(
-                applicationDetail,
-                cicdForm,
-                setCicdForm,
-                handleCreateCicdRequest,
-                cicdRequests,
-                auditEvents,
-                cicdState,
-                cicdMessage,
-              )}
-            </section>
-          )}
         </section>
       )}
 
@@ -1108,6 +1055,11 @@ function renderSourceRepositoryPanel(
   buildProfileState,
   buildProfileMessage,
   lastBuildExecution,
+  buildExecutions,
+  selectedBuildExecution,
+  setSelectedBuildExecutionId,
+  buildExecutionState,
+  buildExecutionMessage,
   editingBuildProfileId,
   handleSelectBuildProfileTool,
   handleSaveBuildProfile,
@@ -1119,6 +1071,7 @@ function renderSourceRepositoryPanel(
   const isGitLab = sourceRepositoryForm.provider === 'GITLAB'
   const tokenLabel = isGitLab ? 'GitLab password / access token' : 'GitHub password / access token'
   const isRegisterView = sourceRepositoryView === 'register'
+  const isDetailView = sourceRepositoryView === 'detail'
 
   return (
     <section className="source-repository-panel">
@@ -1136,14 +1089,14 @@ function renderSourceRepositoryPanel(
           <button
             className="panel-action"
             onClick={() => {
-              setSourceRepositoryView(isRegisterView ? 'list' : 'register')
-              if (!isRegisterView) {
+              setSourceRepositoryView(isRegisterView || isDetailView ? 'list' : 'register')
+              if (!isRegisterView && !isDetailView) {
                 resetBuildProfileForm()
               }
             }}
             type="button"
           >
-            {isRegisterView ? '목록' : '등록'}
+            {isRegisterView || isDetailView ? '목록' : '등록'}
           </button>
         </div>
       </div>
@@ -1163,7 +1116,8 @@ function renderSourceRepositoryPanel(
           tokenLabel,
         )
       ) : (
-        <div className="cicd-designer-layout">
+        <div className={isDetailView ? 'cicd-designer-layout detail' : 'cicd-designer-layout list'}>
+          {!isDetailView && (
           <aside className="cicd-sources-column" aria-label="Source repositories">
             <div className="panel-heading">
               <h3>Sources</h3>
@@ -1184,10 +1138,14 @@ function renderSourceRepositoryPanel(
                       : 'source-repository-card compact'
                   }
                   key={repository.id}
-                  onClick={() => setSelectedSourceRepositoryId(repository.id)}
+                  onClick={() => {
+                    setSelectedSourceRepositoryId(repository.id)
+                    setSourceRepositoryView('detail')
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       setSelectedSourceRepositoryId(repository.id)
+                      setSourceRepositoryView('detail')
                     }
                   }}
                   role="button"
@@ -1231,17 +1189,18 @@ function renderSourceRepositoryPanel(
               ))}
             </div>
           </aside>
+          )}
 
+          {isDetailView && !selectedSourceRepository && (
+            <div className="empty-designer-state">
+              <p className="eyebrow">Repository Detail</p>
+              <h3>No source repository selected</h3>
+              <p className="muted">Return to the source repository list and select a repository.</p>
+            </div>
+          )}
+
+          {isDetailView && selectedSourceRepository && (
           <section className="pipeline-designer-panel" aria-label="Pipeline designer">
-            {!selectedSourceRepository && (
-              <div className="empty-designer-state">
-                <p className="eyebrow">Pipeline Designer</p>
-                <h3>Select a source repository</h3>
-                <p className="muted">Choose a source on the left to create build profiles and preview CI flow.</p>
-              </div>
-            )}
-
-            {selectedSourceRepository && (
               <>
                 <div className="designer-summary">
                   <div>
@@ -1255,6 +1214,8 @@ function renderSourceRepositoryPanel(
                     <span>{selectedSourceRepository.provider}</span>
                     <span>{selectedSourceRepository.visibility}</span>
                     <span>{selectedSourceRepository.credentialConfigured ? 'Password/token saved' : 'Auth missing'}</span>
+                    <span>{selectedSourceRepository.cloneCount ?? 0} clones</span>
+                    <span>{selectedSourceRepository.buildCount ?? 0} builds</span>
                   </div>
                 </div>
 
@@ -1393,10 +1354,20 @@ function renderSourceRepositoryPanel(
                     </form>
                   </section>
                 </div>
-              </>
-            )}
-          </section>
 
+                {renderBuildExecutionHistory(
+                  selectedBuildProfile,
+                  buildExecutions,
+                  selectedBuildExecution,
+                  setSelectedBuildExecutionId,
+                  buildExecutionState,
+                  buildExecutionMessage,
+                )}
+              </>
+          </section>
+          )}
+
+          {isDetailView && selectedSourceRepository && (
           <aside className="run-panel" aria-label="Run build profile">
             <p className="eyebrow">Run Panel</p>
             <h3>Build execution</h3>
@@ -1471,64 +1442,143 @@ function renderSourceRepositoryPanel(
                     <div className="execution-result-heading">
                       <div>
                         <p className="eyebrow">Latest Execution</p>
-                        <h4>#{lastBuildExecution.executionId || 'Pending'}</h4>
+                        <h4>#{lastBuildExecution.historyId || lastBuildExecution.executionId || 'Pending'}</h4>
                       </div>
                       <strong className={`status-value ${statusTone(lastBuildExecution.status)}`}>
                         {lastBuildExecution.status}
                       </strong>
                     </div>
 
-                    <div className="execution-stage">
-                      <div className="execution-stage-heading">
-                        <span>Clone</span>
-                        <strong className={`status-value ${statusTone(lastBuildExecution.cloneStatus)}`}>
-                          {lastBuildExecution.cloneStatus || 'UNKNOWN'}
-                        </strong>
+                    <dl className="execution-facts latest-summary">
+                      <div>
+                        <dt>Profile</dt>
+                        <dd>{lastBuildExecution.buildProfileName || selectedBuildProfile.name}</dd>
                       </div>
-                      <dl className="execution-facts">
-                        <div>
-                          <dt>Branch</dt>
-                          <dd>{lastBuildExecution.branch || buildProfileForm.branch}</dd>
-                        </div>
-                        <div>
-                          <dt>Checkout</dt>
-                          <dd>{lastBuildExecution.checkoutPath || 'None'}</dd>
-                        </div>
-                      </dl>
-                      <p className="execution-message">{lastBuildExecution.cloneMessage || 'No clone result captured.'}</p>
-                    </div>
-
-                    <div className="execution-stage">
-                      <div className="execution-stage-heading">
-                        <span>Build</span>
-                        <strong className={`status-value ${statusTone(lastBuildExecution.status)}`}>
-                          {lastBuildExecution.status}
-                        </strong>
+                      <div>
+                        <dt>Finished</dt>
+                        <dd>{formatDateTime(lastBuildExecution.finishedAt || lastBuildExecution.createdAt)}</dd>
                       </div>
-                      <dl className="execution-facts">
-                        <div>
-                          <dt>Exit code</dt>
-                          <dd>{lastBuildExecution.exitCode ?? 'None'}</dd>
-                        </div>
-                        <div>
-                          <dt>Started</dt>
-                          <dd>{formatDateTime(lastBuildExecution.startedAt)}</dd>
-                        </div>
-                        <div>
-                          <dt>Finished</dt>
-                          <dd>{formatDateTime(lastBuildExecution.finishedAt)}</dd>
-                        </div>
-                      </dl>
-
-                      <p className="execution-message">{lastBuildExecution.statusMessage}</p>
-                      <pre>{lastBuildExecution.logSummary || 'No log output captured.'}</pre>
-                    </div>
+                    </dl>
                   </section>
                 )}
               </>
             )}
           </aside>
+          )}
         </div>
+      )}
+    </section>
+  )
+}
+
+function renderBuildExecutionHistory(
+  selectedBuildProfile,
+  buildExecutions,
+  selectedBuildExecution,
+  setSelectedBuildExecutionId,
+  buildExecutionState,
+  buildExecutionMessage,
+) {
+  return (
+    <section className="execution-history-panel" aria-label="Build execution history">
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Execution History</p>
+          <h3>{selectedBuildProfile ? selectedBuildProfile.name : 'Select a build profile'}</h3>
+        </div>
+        <span>{buildExecutions.length}</span>
+      </div>
+
+      {!selectedBuildProfile && <p className="muted">Select a build profile to view execution history.</p>}
+      {selectedBuildProfile && buildExecutionState === 'loading' && <p className="muted">Loading executions...</p>}
+      {buildExecutionMessage && (
+        <p className={buildExecutionState === 'error' ? 'status-message' : 'success-message'}>
+          {buildExecutionMessage}
+        </p>
+      )}
+      {selectedBuildProfile && buildExecutionState !== 'loading' && buildExecutions.length === 0 && (
+        <p className="muted">No executions recorded for this build profile.</p>
+      )}
+
+      {buildExecutions.length > 0 && (
+        <div className="execution-history-table" role="table" aria-label="Build profile executions">
+          <div className="execution-history-row execution-history-head" role="row">
+            <span role="columnheader">Status</span>
+            <span role="columnheader">Runner</span>
+            <span role="columnheader">Branch</span>
+            <span role="columnheader">Value</span>
+            <span role="columnheader">Requested by</span>
+            <span role="columnheader">Finished</span>
+            <span role="columnheader">Exit</span>
+          </div>
+
+          {buildExecutions.map((execution) => (
+            <button
+              className={
+                selectedBuildExecution?.id === execution.id
+                  ? 'execution-history-row active'
+                  : 'execution-history-row'
+              }
+              key={execution.id}
+              onClick={() => setSelectedBuildExecutionId(execution.id)}
+              role="row"
+              type="button"
+            >
+              <span role="cell" className={`status-value ${statusTone(execution.status)}`}>{execution.status}</span>
+              <span role="cell">{execution.runnerType}</span>
+              <span role="cell">{execution.branch}</span>
+              <span role="cell">{execution.requestedValue}</span>
+              <span role="cell">{execution.requestedBy}</span>
+              <span role="cell">{formatDateTime(execution.finishedAt || execution.createdAt)}</span>
+              <span role="cell">{execution.exitCode ?? 'None'}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedBuildExecution && (
+        <section className="execution-history-detail" aria-label="Selected execution detail">
+          <div className="execution-detail-grid">
+            <div>
+              <p className="eyebrow">Request Spec</p>
+              <dl>
+                <div><dt>Runner</dt><dd>{selectedBuildExecution.runnerType}</dd></div>
+                <div><dt>Branch</dt><dd>{selectedBuildExecution.branch}</dd></div>
+                <div><dt>Value</dt><dd>{selectedBuildExecution.requestedValue}</dd></div>
+                <div><dt>Requested by</dt><dd>{selectedBuildExecution.requestedBy}</dd></div>
+                <div><dt>External execution</dt><dd>{selectedBuildExecution.externalExecutionId ?? 'None'}</dd></div>
+              </dl>
+            </div>
+
+            <div>
+              <p className="eyebrow">Clone Result</p>
+              <dl>
+                <div><dt>Status</dt><dd>{selectedBuildExecution.cloneStatus || 'None'}</dd></div>
+                <div><dt>Message</dt><dd>{selectedBuildExecution.cloneMessage || 'None'}</dd></div>
+                <div><dt>Checkout</dt><dd>{selectedBuildExecution.checkoutPath || 'None'}</dd></div>
+              </dl>
+            </div>
+
+            <div>
+              <p className="eyebrow">Build Result</p>
+              <dl>
+                <div><dt>Status</dt><dd>{selectedBuildExecution.status}</dd></div>
+                <div><dt>Message</dt><dd>{selectedBuildExecution.statusMessage || 'None'}</dd></div>
+                <div><dt>Started</dt><dd>{formatDateTime(selectedBuildExecution.startedAt)}</dd></div>
+                <div><dt>Finished</dt><dd>{formatDateTime(selectedBuildExecution.finishedAt)}</dd></div>
+                <div><dt>Exit code</dt><dd>{selectedBuildExecution.exitCode ?? 'None'}</dd></div>
+              </dl>
+            </div>
+          </div>
+
+          {selectedBuildExecution.externalRunUrl && (
+            <a href={selectedBuildExecution.externalRunUrl} rel="noreferrer" target="_blank">
+              Open external run
+            </a>
+          )}
+
+          <pre>{selectedBuildExecution.logSummary || 'No log output captured.'}</pre>
+        </section>
       )}
     </section>
   )
@@ -1656,177 +1706,6 @@ function renderPipelinePreview(ciTool, density = 'default') {
       <p className="pipeline-preview-note">Template preview only. It is not parsed from the saved script.</p>
     </section>
   )
-}
-
-function renderCicdControlPanel(
-  applicationDetail,
-  cicdForm,
-  setCicdForm,
-  handleCreateCicdRequest,
-  cicdRequests,
-  auditEvents,
-  cicdState,
-  cicdMessage,
-) {
-  const selectedEnvironment = applicationDetail.environments.find(
-    (environment) => environment.environment === cicdForm.environment,
-  ) ?? applicationDetail.environments[0]
-  const applicationRequests = cicdRequests.filter((request) => request.applicationId === applicationDetail.id)
-  const applicationAuditEvents = auditEvents.filter((event) => (
-    applicationRequests.some((request) => request.id === event.cicdRequestId)
-  ))
-
-  return (
-    <section className="cicd-panel" aria-label="CI/CD requests">
-      <div className="status-heading">
-        <div>
-          <p className="eyebrow">CI/CD Control</p>
-          <h3>Requests and audit</h3>
-        </div>
-        <span className="connection-badge">PORTAL OWNED</span>
-      </div>
-
-      <form className="cicd-form" onSubmit={handleCreateCicdRequest}>
-        <label>
-          <span>Environment</span>
-          <select
-            onChange={(event) => {
-              const environment = applicationDetail.environments.find(
-                (candidate) => candidate.environment === event.target.value,
-              )
-              setCicdForm((current) => ({
-                ...current,
-                environment: event.target.value,
-                componentId: environment?.components[0]?.id?.toString() ?? '',
-              }))
-            }}
-            value={cicdForm.environment}
-          >
-            {applicationDetail.environments.map((environment) => (
-              <option key={environment.id} value={environment.environment}>
-                {environment.environment}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Component</span>
-          <select
-            onChange={(event) => setCicdForm((current) => ({ ...current, componentId: event.target.value }))}
-            value={cicdForm.componentId}
-          >
-            {(selectedEnvironment?.components ?? []).map((component) => (
-              <option key={component.id} value={component.id}>
-                {component.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label>
-          <span>Request type</span>
-          <select
-            onChange={(event) => setCicdForm((current) => ({ ...current, requestType: event.target.value }))}
-            value={cicdForm.requestType}
-          >
-            <option value="BUILD_IMAGE">Build image</option>
-            <option value="DEPLOY_IMAGE">Deploy image</option>
-            <option value="CHANGE_REPLICAS">Change replicas</option>
-          </select>
-        </label>
-
-        <label>
-          <span>Requested value</span>
-          <input
-            onChange={(event) => setCicdForm((current) => ({ ...current, requestedValue: event.target.value }))}
-            placeholder={requestValuePlaceholder(cicdForm.requestType)}
-            required
-            type="text"
-            value={cicdForm.requestedValue}
-          />
-        </label>
-
-        <label>
-          <span>Requested by</span>
-          <input
-            onChange={(event) => setCicdForm((current) => ({ ...current, requestedBy: event.target.value }))}
-            required
-            type="text"
-            value={cicdForm.requestedBy}
-          />
-        </label>
-
-        <button disabled={cicdState === 'submitting' || !cicdForm.componentId} type="submit">
-          Record request
-        </button>
-      </form>
-
-      {cicdMessage && (
-        <p className={cicdState === 'error' ? 'status-message' : 'success-message'}>{cicdMessage}</p>
-      )}
-
-      <div className="cicd-columns">
-        <div className="request-list">
-          <div className="panel-heading">
-            <h4>Requests</h4>
-            <span>{applicationRequests.length}</span>
-          </div>
-          {applicationRequests.length === 0 && <p className="muted">No CI/CD requests recorded.</p>}
-          {applicationRequests.map((request) => (
-            <article className="request-card" key={request.id}>
-              <div>
-                <strong>{request.requestType}</strong>
-                <small>{request.componentName} / {request.environment}</small>
-              </div>
-              <code>{request.requestedValue}</code>
-              <span className={`status-value ${cicdStatusTone(request.status)}`}>{request.status}</span>
-            </article>
-          ))}
-        </div>
-
-        <div className="request-list">
-          <div className="panel-heading">
-            <h4>Audit events</h4>
-            <span>{applicationAuditEvents.length}</span>
-          </div>
-          {applicationAuditEvents.length === 0 && <p className="muted">No audit events recorded.</p>}
-          {applicationAuditEvents.map((event) => (
-            <article className="request-card" key={event.id}>
-              <div>
-                <strong>{event.eventType}</strong>
-                <small>{new Date(event.createdAt).toLocaleString()}</small>
-              </div>
-              <p>{event.description}</p>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function requestValuePlaceholder(requestType) {
-  if (requestType === 'CHANGE_REPLICAS') {
-    return '2'
-  }
-  if (requestType === 'DEPLOY_IMAGE') {
-    return '1fd847c'
-  }
-  return 'main'
-}
-
-function cicdStatusTone(status) {
-  if (['SUCCEEDED'].includes(status)) {
-    return 'good'
-  }
-  if (['REQUESTED', 'DISPATCHED', 'RUNNING'].includes(status)) {
-    return 'pending'
-  }
-  if (['FAILED'].includes(status)) {
-    return 'bad'
-  }
-  return 'neutral'
 }
 
 function renderMetadata(label, value) {

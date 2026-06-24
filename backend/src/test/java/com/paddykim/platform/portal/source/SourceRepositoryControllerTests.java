@@ -38,6 +38,9 @@ class SourceRepositoryControllerTests {
     private BuildProfileRepository buildProfileRepository;
 
     @Autowired
+    private BuildExecutionHistoryRepository buildExecutionHistoryRepository;
+
+    @Autowired
     private SourceRepositoryCredentialService credentialService;
 
     @Autowired
@@ -48,6 +51,7 @@ class SourceRepositoryControllerTests {
 
     @BeforeEach
     void setUp() {
+        buildExecutionHistoryRepository.deleteAll();
         buildProfileRepository.deleteAll();
         sourceRepositoryRepository.deleteAll();
         platformCicdExecutionClient.reset();
@@ -300,12 +304,14 @@ class SourceRepositoryControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.sourceRepositoryId", is(repository.getId().intValue())))
                 .andExpect(jsonPath("$.buildProfileId", is(buildProfile.getId().intValue())))
+                .andExpect(jsonPath("$.buildProfileName", is("backend image build")))
                 .andExpect(jsonPath("$.repositoryName", is("platform-app")))
                 .andExpect(jsonPath("$.ciTool", is("SHELL")))
                 .andExpect(jsonPath("$.requestedBy", is("platform-operator")))
                 .andExpect(jsonPath("$.imageTag", is("day21-test")))
                 .andExpect(jsonPath("$.branch", is("main")))
                 .andExpect(jsonPath("$.dispatchTarget", is("platform-cicd-http")))
+                .andExpect(jsonPath("$.historyId").isNumber())
                 .andExpect(jsonPath("$.executionId", is(1001)))
                 .andExpect(jsonPath("$.status", is("SUCCEEDED")))
                 .andExpect(jsonPath("$.statusMessage", is("Shell script completed with exit code 0")))
@@ -324,6 +330,67 @@ class SourceRepositoryControllerTests {
         org.assertj.core.api.Assertions.assertThat(updated.getBuildCount()).isEqualTo(1);
         org.assertj.core.api.Assertions.assertThat(updated.getLastClonedAt()).isNotNull();
         org.assertj.core.api.Assertions.assertThat(updated.getLastBuiltAt()).isNotNull();
+
+        mockMvc.perform(get(
+                        "/api/source-repositories/{repositoryId}/build-profiles/{profileId}/executions",
+                        repository.getId(),
+                        buildProfile.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].externalExecutionId", is(1001)))
+                .andExpect(jsonPath("$[0].buildProfileName", is("backend image build")))
+                .andExpect(jsonPath("$[0].runnerType", is("SHELL")))
+                .andExpect(jsonPath("$[0].branch", is("main")))
+                .andExpect(jsonPath("$[0].requestedBy", is("platform-operator")))
+                .andExpect(jsonPath("$[0].requestedValue", is("day21-test")))
+                .andExpect(jsonPath("$[0].status", is("SUCCEEDED")))
+                .andExpect(jsonPath("$[0].cloneStatus", is("SUCCEEDED")))
+                .andExpect(jsonPath("$[0].logSummary", containsString("fake shell execution")));
+    }
+
+    @Test
+    void storesFailedBuildExecutionHistoryWhenCicdDispatchFails() throws Exception {
+        SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+        BuildProfile buildProfile = buildProfileRepository.save(new BuildProfile(
+                repository,
+                "backend image build",
+                BuildProfileCiTool.SHELL,
+                ".",
+                "./gradlew test",
+                "Build backend image"
+        ));
+        platformCicdExecutionClient.failNext("platform-cicd unavailable");
+
+        mockMvc.perform(post(
+                        "/api/source-repositories/{repositoryId}/build-profiles/{profileId}/run",
+                        repository.getId(),
+                        buildProfile.getId()
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "requestedBy": "platform-operator",
+                                  "imageTag": "day24-fail",
+                                  "branch": "main"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.historyId").isNumber())
+                .andExpect(jsonPath("$.status", is("FAILED")))
+                .andExpect(jsonPath("$.statusMessage", is("platform-cicd unavailable")));
+
+        mockMvc.perform(get(
+                        "/api/source-repositories/{repositoryId}/build-profiles/{profileId}/executions",
+                        repository.getId(),
+                        buildProfile.getId()
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", hasSize(1)))
+                .andExpect(jsonPath("$[0].externalExecutionId").isEmpty())
+                .andExpect(jsonPath("$[0].status", is("FAILED")))
+                .andExpect(jsonPath("$[0].statusMessage", is("platform-cicd unavailable")))
+                .andExpect(jsonPath("$[0].requestedValue", is("day24-fail")));
     }
 
     @Test
@@ -361,6 +428,7 @@ class SourceRepositoryControllerTests {
                 .andExpect(status().isNoContent());
 
         org.assertj.core.api.Assertions.assertThat(buildProfileRepository.findAll()).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(buildExecutionHistoryRepository.findAll()).isEmpty();
     }
 
     private String encryptForNetwork(String plainText) {
@@ -394,10 +462,16 @@ class SourceRepositoryControllerTests {
     static class RecordingPlatformCicdExecutionClient implements PlatformCicdExecutionClient {
 
         private PlatformCicdExecutionCreateRequest lastRequest;
+        private String nextFailureMessage;
 
         @Override
         public PlatformCicdExecutionResponse createExecution(PlatformCicdExecutionCreateRequest request) {
             this.lastRequest = request;
+            if (nextFailureMessage != null) {
+                String message = nextFailureMessage;
+                nextFailureMessage = null;
+                throw new SourceRepositoryValidationException(message);
+            }
             return new PlatformCicdExecutionResponse(
                     1001L,
                     request.portalRequestId(),
@@ -417,6 +491,11 @@ class SourceRepositoryControllerTests {
 
         void reset() {
             lastRequest = null;
+            nextFailureMessage = null;
+        }
+
+        void failNext(String message) {
+            nextFailureMessage = message;
         }
     }
 }

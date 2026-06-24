@@ -10,15 +10,18 @@ public class SourceRepositoryService {
 
     private final SourceRepositoryRepository sourceRepositoryRepository;
     private final BuildProfileRepository buildProfileRepository;
+    private final BuildExecutionHistoryRepository buildExecutionHistoryRepository;
     private final SourceRepositoryCredentialService credentialService;
 
     public SourceRepositoryService(
             SourceRepositoryRepository sourceRepositoryRepository,
             BuildProfileRepository buildProfileRepository,
+            BuildExecutionHistoryRepository buildExecutionHistoryRepository,
             SourceRepositoryCredentialService credentialService
     ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
         this.buildProfileRepository = buildProfileRepository;
+        this.buildExecutionHistoryRepository = buildExecutionHistoryRepository;
         this.credentialService = credentialService;
     }
 
@@ -87,6 +90,7 @@ public class SourceRepositoryService {
             throw new SourceRepositoryNotFoundException(id);
         }
 
+        buildExecutionHistoryRepository.deleteBySourceRepositoryId(id);
         buildProfileRepository.deleteBySourceRepositoryId(id);
         sourceRepositoryRepository.deleteById(id);
     }

@@ -15,17 +15,20 @@ public class BuildProfileService {
     private final BuildProfileRepository buildProfileRepository;
     private final PlatformCicdExecutionClient platformCicdExecutionClient;
     private final SourceRepositoryCredentialService credentialService;
+    private final BuildExecutionHistoryRepository buildExecutionHistoryRepository;
 
     public BuildProfileService(
             SourceRepositoryRepository sourceRepositoryRepository,
             BuildProfileRepository buildProfileRepository,
             PlatformCicdExecutionClient platformCicdExecutionClient,
-            SourceRepositoryCredentialService credentialService
+            SourceRepositoryCredentialService credentialService,
+            BuildExecutionHistoryRepository buildExecutionHistoryRepository
     ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
         this.buildProfileRepository = buildProfileRepository;
         this.platformCicdExecutionClient = platformCicdExecutionClient;
         this.credentialService = credentialService;
+        this.buildExecutionHistoryRepository = buildExecutionHistoryRepository;
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +87,22 @@ public class BuildProfileService {
     @Transactional
     public void deleteBuildProfile(Long sourceRepositoryId, Long buildProfileId) {
         BuildProfile buildProfile = findBuildProfile(sourceRepositoryId, buildProfileId);
+        buildExecutionHistoryRepository.deleteByBuildProfileId(buildProfileId);
         buildProfileRepository.delete(buildProfile);
+    }
+
+    @Transactional(readOnly = true)
+    public List<BuildExecutionHistoryResponse> listBuildProfileExecutions(
+            Long sourceRepositoryId,
+            Long buildProfileId
+    ) {
+        findBuildProfile(sourceRepositoryId, buildProfileId);
+
+        return buildExecutionHistoryRepository
+                .findBySourceRepositoryIdAndBuildProfileIdOrderByCreatedAtDesc(sourceRepositoryId, buildProfileId)
+                .stream()
+                .map(BuildExecutionHistoryResponse::from)
+                .toList();
     }
 
     @Transactional
@@ -100,26 +118,56 @@ public class BuildProfileService {
         String branch = textOrDefault(request.branch(), "main");
         String credential = credentialService.decryptFromStorage(sourceRepository.getAccessToken());
         Long portalRequestId = Instant.now().toEpochMilli();
-        PlatformCicdExecutionResponse execution = platformCicdExecutionClient.createExecution(
-                new PlatformCicdExecutionCreateRequest(
-                        portalRequestId,
-                        textOrDefault(request.applicationName(), sourceRepository.getName()),
-                        textOrDefault(request.environment(), "dev"),
-                        textOrDefault(request.componentName(), sourceRepository.getName()),
-                        "BUILD_IMAGE",
-                        imageTag,
-                        requestedBy,
-                        sourceRepositoryId,
-                        buildProfileId,
-                        buildProfile.getCiTool().name(),
-                        sourceRepository.getRepositoryUrl(),
-                        branch,
-                        sourceRepository.getAccountName(),
-                        credential,
-                        buildProfile.getWorkingDirectory(),
-                        buildProfile.getScript()
-                )
-        );
+        PlatformCicdExecutionResponse execution;
+        try {
+            execution = platformCicdExecutionClient.createExecution(new PlatformCicdExecutionCreateRequest(
+                    portalRequestId,
+                    textOrDefault(request.applicationName(), sourceRepository.getName()),
+                    textOrDefault(request.environment(), "dev"),
+                    textOrDefault(request.componentName(), sourceRepository.getName()),
+                    "BUILD_IMAGE",
+                    imageTag,
+                    requestedBy,
+                    sourceRepositoryId,
+                    buildProfileId,
+                    buildProfile.getCiTool().name(),
+                    sourceRepository.getRepositoryUrl(),
+                    branch,
+                    sourceRepository.getAccountName(),
+                    credential,
+                    buildProfile.getWorkingDirectory(),
+                    buildProfile.getScript()
+            ));
+        } catch (SourceRepositoryValidationException exception) {
+            BuildExecutionHistory history = saveFailedHistory(
+                    sourceRepository,
+                    buildProfile,
+                    portalRequestId,
+                    branch,
+                    requestedBy,
+                    imageTag,
+                    exception.getMessage()
+            );
+
+            return BuildProfileRunResponse.failed(
+                    sourceRepositoryId,
+                    buildProfileId,
+                    buildProfile.getName(),
+                    history.getId(),
+                    sourceRepository.getName(),
+                    sourceRepository.getRepositoryUrl(),
+                    buildProfile.getCiTool(),
+                    buildProfile.getWorkingDirectory(),
+                    requestedBy,
+                    imageTag,
+                    branch,
+                    "platform-cicd-http",
+                    portalRequestId,
+                    exception.getMessage()
+            );
+        }
+
+        BuildExecutionHistory history = saveHistory(sourceRepository, buildProfile, branch, requestedBy, imageTag, execution);
         Instant now = Instant.now();
         if ("SUCCEEDED".equalsIgnoreCase(execution.cloneStatus())) {
             sourceRepository.markCloned(now);
@@ -131,6 +179,7 @@ public class BuildProfileService {
         return BuildProfileRunResponse.from(
                 sourceRepositoryId,
                 buildProfileId,
+                buildProfile.getName(),
                 sourceRepository.getName(),
                 sourceRepository.getRepositoryUrl(),
                 buildProfile.getCiTool(),
@@ -139,8 +188,72 @@ public class BuildProfileService {
                 imageTag,
                 branch,
                 "platform-cicd-http",
+                history.getId(),
                 execution
         );
+    }
+
+    private BuildExecutionHistory saveHistory(
+            SourceRepository sourceRepository,
+            BuildProfile buildProfile,
+            String branch,
+            String requestedBy,
+            String imageTag,
+            PlatformCicdExecutionResponse execution
+    ) {
+        return buildExecutionHistoryRepository.save(new BuildExecutionHistory(
+                sourceRepository,
+                buildProfile,
+                execution.executionId(),
+                execution.portalRequestId(),
+                buildProfile.getCiTool(),
+                branch,
+                requestedBy,
+                imageTag,
+                nullToDefault(execution.status(), "UNKNOWN"),
+                execution.statusMessage(),
+                execution.cloneStatus(),
+                execution.cloneMessage(),
+                execution.checkoutPath(),
+                execution.startedAt(),
+                execution.finishedAt(),
+                execution.exitCode(),
+                execution.logSummary(),
+                null,
+                null
+        ));
+    }
+
+    private BuildExecutionHistory saveFailedHistory(
+            SourceRepository sourceRepository,
+            BuildProfile buildProfile,
+            Long portalRequestId,
+            String branch,
+            String requestedBy,
+            String imageTag,
+            String statusMessage
+    ) {
+        return buildExecutionHistoryRepository.save(new BuildExecutionHistory(
+                sourceRepository,
+                buildProfile,
+                null,
+                portalRequestId,
+                buildProfile.getCiTool(),
+                branch,
+                requestedBy,
+                imageTag,
+                "FAILED",
+                statusMessage,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "",
+                null,
+                null
+        ));
     }
 
     private BuildProfile findBuildProfile(Long sourceRepositoryId, Long buildProfileId) {
@@ -179,6 +292,14 @@ public class BuildProfileService {
     }
 
     private static String textOrDefault(String value, String defaultValue) {
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+
+        return value.trim();
+    }
+
+    private static String nullToDefault(String value, String defaultValue) {
         if (value == null || value.isBlank()) {
             return defaultValue;
         }

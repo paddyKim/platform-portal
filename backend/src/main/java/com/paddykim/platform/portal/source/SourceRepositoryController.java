@@ -113,6 +113,14 @@ public class SourceRepositoryController {
         return buildProfileService.prepareBuildProfileRun(repositoryId, profileId, request);
     }
 
+    @GetMapping("/{repositoryId}/build-profiles/{profileId}/executions")
+    public List<BuildExecutionHistoryResponse> listBuildProfileExecutions(
+            @PathVariable Long repositoryId,
+            @PathVariable Long profileId
+    ) {
+        return buildProfileService.listBuildProfileExecutions(repositoryId, profileId);
+    }
+
     @ExceptionHandler(SourceRepositoryValidationException.class)
     ResponseEntity<ErrorResponse> handleValidation(SourceRepositoryValidationException exception) {
         return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
