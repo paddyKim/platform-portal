@@ -140,6 +140,10 @@ public class SourceRepository {
         return accessToken != null && !accessToken.isBlank();
     }
 
+    public String getAccessToken() {
+        return accessToken;
+    }
+
     public String getDefaultBranch() {
         return defaultBranch;
     }
@@ -170,5 +174,17 @@ public class SourceRepository {
 
     public Instant getLastBuiltAt() {
         return lastBuiltAt;
+    }
+
+    public void markCloned(Instant clonedAt) {
+        this.cloneCount = getCloneCount() + 1;
+        this.lastClonedAt = clonedAt;
+        this.updatedAt = clonedAt;
+    }
+
+    public void markBuilt(Instant builtAt) {
+        this.buildCount = getBuildCount() + 1;
+        this.lastBuiltAt = builtAt;
+        this.updatedAt = builtAt;
     }
 }

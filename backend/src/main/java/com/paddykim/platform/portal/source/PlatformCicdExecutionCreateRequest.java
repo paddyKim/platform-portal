@@ -12,6 +12,9 @@ public record PlatformCicdExecutionCreateRequest(
         Long buildProfileId,
         String ciTool,
         String repositoryUrl,
+        String branch,
+        String accountName,
+        String credential,
         String workingDirectory,
         String script
 ) {

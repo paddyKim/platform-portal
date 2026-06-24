@@ -14,15 +14,18 @@ public class BuildProfileService {
     private final SourceRepositoryRepository sourceRepositoryRepository;
     private final BuildProfileRepository buildProfileRepository;
     private final PlatformCicdExecutionClient platformCicdExecutionClient;
+    private final SourceRepositoryCredentialService credentialService;
 
     public BuildProfileService(
             SourceRepositoryRepository sourceRepositoryRepository,
             BuildProfileRepository buildProfileRepository,
-            PlatformCicdExecutionClient platformCicdExecutionClient
+            PlatformCicdExecutionClient platformCicdExecutionClient,
+            SourceRepositoryCredentialService credentialService
     ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
         this.buildProfileRepository = buildProfileRepository;
         this.platformCicdExecutionClient = platformCicdExecutionClient;
+        this.credentialService = credentialService;
     }
 
     @Transactional(readOnly = true)
@@ -84,7 +87,7 @@ public class BuildProfileService {
         buildProfileRepository.delete(buildProfile);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public BuildProfileRunResponse prepareBuildProfileRun(
             Long sourceRepositoryId,
             Long buildProfileId,
@@ -94,6 +97,8 @@ public class BuildProfileService {
         SourceRepository sourceRepository = buildProfile.getSourceRepository();
         String requestedBy = request.requestedBy().trim();
         String imageTag = request.imageTag().trim();
+        String branch = textOrDefault(request.branch(), "main");
+        String credential = credentialService.decryptFromStorage(sourceRepository.getAccessToken());
         Long portalRequestId = Instant.now().toEpochMilli();
         PlatformCicdExecutionResponse execution = platformCicdExecutionClient.createExecution(
                 new PlatformCicdExecutionCreateRequest(
@@ -108,10 +113,20 @@ public class BuildProfileService {
                         buildProfileId,
                         buildProfile.getCiTool().name(),
                         sourceRepository.getRepositoryUrl(),
+                        branch,
+                        sourceRepository.getAccountName(),
+                        credential,
                         buildProfile.getWorkingDirectory(),
                         buildProfile.getScript()
                 )
         );
+        Instant now = Instant.now();
+        if ("SUCCEEDED".equalsIgnoreCase(execution.cloneStatus())) {
+            sourceRepository.markCloned(now);
+        }
+        if (execution.finishedAt() != null) {
+            sourceRepository.markBuilt(execution.finishedAt());
+        }
 
         return BuildProfileRunResponse.from(
                 sourceRepositoryId,
@@ -122,6 +137,7 @@ public class BuildProfileService {
                 buildProfile.getWorkingDirectory(),
                 requestedBy,
                 imageTag,
+                branch,
                 "platform-cicd-http",
                 execution
         );

@@ -190,6 +190,7 @@ function App() {
     description: '',
     requestedBy: 'platform-operator',
     imageTag: 'day21-test',
+    branch: 'main',
   })
   const [editingBuildProfileId, setEditingBuildProfileId] = useState(null)
   const [cicdForm, setCicdForm] = useState({
@@ -588,6 +589,7 @@ function App() {
       description: '',
       requestedBy: 'platform-operator',
       imageTag: 'day21-test',
+      branch: 'main',
     })
   }
 
@@ -780,6 +782,7 @@ function App() {
           body: JSON.stringify({
             requestedBy: buildProfileForm.requestedBy,
             imageTag: buildProfileForm.imageTag,
+            branch: buildProfileForm.branch,
             applicationName: applicationDetail?.name || selectedSourceRepository?.name,
             environment: environment?.environment || 'dev',
             componentName: component?.name || selectedSourceRepository?.name,
@@ -788,6 +791,7 @@ function App() {
       )
       setBuildProfileMessage(`${result.status}: ${result.statusMessage}`)
       setLastBuildExecution(result)
+      await reloadSourceRepositories()
       setBuildProfileState('ready')
     } catch (error) {
       setBuildProfileMessage(error.message)
@@ -1438,6 +1442,18 @@ function renderSourceRepositoryPanel(
                       value={buildProfileForm.imageTag}
                     />
                   </label>
+                  <label>
+                    <span>Branch</span>
+                    <input
+                      onChange={(event) => setBuildProfileForm((current) => ({
+                        ...current,
+                        branch: event.target.value,
+                      }))}
+                      required
+                      type="text"
+                      value={buildProfileForm.branch}
+                    />
+                  </label>
                 </div>
 
                 <button
@@ -1446,7 +1462,8 @@ function renderSourceRepositoryPanel(
                   onClick={() => handleRunBuildProfile(selectedBuildProfile)}
                   type="button"
                 >
-                  Run build
+                  {buildProfileState === 'submitting' && <span className="button-spinner" aria-hidden="true" />}
+                  <span>{buildProfileState === 'submitting' ? 'Running...' : 'Run build'}</span>
                 </button>
 
                 {lastBuildExecution && (
@@ -1461,23 +1478,51 @@ function renderSourceRepositoryPanel(
                       </strong>
                     </div>
 
-                    <dl className="execution-facts">
-                      <div>
-                        <dt>Exit code</dt>
-                        <dd>{lastBuildExecution.exitCode ?? 'None'}</dd>
+                    <div className="execution-stage">
+                      <div className="execution-stage-heading">
+                        <span>Clone</span>
+                        <strong className={`status-value ${statusTone(lastBuildExecution.cloneStatus)}`}>
+                          {lastBuildExecution.cloneStatus || 'UNKNOWN'}
+                        </strong>
                       </div>
-                      <div>
-                        <dt>Started</dt>
-                        <dd>{formatDateTime(lastBuildExecution.startedAt)}</dd>
-                      </div>
-                      <div>
-                        <dt>Finished</dt>
-                        <dd>{formatDateTime(lastBuildExecution.finishedAt)}</dd>
-                      </div>
-                    </dl>
+                      <dl className="execution-facts">
+                        <div>
+                          <dt>Branch</dt>
+                          <dd>{lastBuildExecution.branch || buildProfileForm.branch}</dd>
+                        </div>
+                        <div>
+                          <dt>Checkout</dt>
+                          <dd>{lastBuildExecution.checkoutPath || 'None'}</dd>
+                        </div>
+                      </dl>
+                      <p className="execution-message">{lastBuildExecution.cloneMessage || 'No clone result captured.'}</p>
+                    </div>
 
-                    <p className="execution-message">{lastBuildExecution.statusMessage}</p>
-                    <pre>{lastBuildExecution.logSummary || 'No log output captured.'}</pre>
+                    <div className="execution-stage">
+                      <div className="execution-stage-heading">
+                        <span>Build</span>
+                        <strong className={`status-value ${statusTone(lastBuildExecution.status)}`}>
+                          {lastBuildExecution.status}
+                        </strong>
+                      </div>
+                      <dl className="execution-facts">
+                        <div>
+                          <dt>Exit code</dt>
+                          <dd>{lastBuildExecution.exitCode ?? 'None'}</dd>
+                        </div>
+                        <div>
+                          <dt>Started</dt>
+                          <dd>{formatDateTime(lastBuildExecution.startedAt)}</dd>
+                        </div>
+                        <div>
+                          <dt>Finished</dt>
+                          <dd>{formatDateTime(lastBuildExecution.finishedAt)}</dd>
+                        </div>
+                      </dl>
+
+                      <p className="execution-message">{lastBuildExecution.statusMessage}</p>
+                      <pre>{lastBuildExecution.logSummary || 'No log output captured.'}</pre>
+                    </div>
                   </section>
                 )}
               </>

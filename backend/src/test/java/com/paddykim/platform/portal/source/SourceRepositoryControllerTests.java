@@ -41,12 +41,16 @@ class SourceRepositoryControllerTests {
     private SourceRepositoryCredentialService credentialService;
 
     @Autowired
+    private RecordingPlatformCicdExecutionClient platformCicdExecutionClient;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
     void setUp() {
         buildProfileRepository.deleteAll();
         sourceRepositoryRepository.deleteAll();
+        platformCicdExecutionClient.reset();
     }
 
     @Test
@@ -289,7 +293,8 @@ class SourceRepositoryControllerTests {
                         .content("""
                                 {
                                   "requestedBy": "platform-operator",
-                                  "imageTag": "day21-test"
+                                  "imageTag": "day21-test",
+                                  "branch": "main"
                                 }
                                 """))
                 .andExpect(status().isOk())
@@ -299,12 +304,26 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$.ciTool", is("SHELL")))
                 .andExpect(jsonPath("$.requestedBy", is("platform-operator")))
                 .andExpect(jsonPath("$.imageTag", is("day21-test")))
+                .andExpect(jsonPath("$.branch", is("main")))
                 .andExpect(jsonPath("$.dispatchTarget", is("platform-cicd-http")))
                 .andExpect(jsonPath("$.executionId", is(1001)))
                 .andExpect(jsonPath("$.status", is("SUCCEEDED")))
                 .andExpect(jsonPath("$.statusMessage", is("Shell script completed with exit code 0")))
+                .andExpect(jsonPath("$.cloneStatus", is("SUCCEEDED")))
+                .andExpect(jsonPath("$.cloneMessage", is("Git clone completed for branch main")))
+                .andExpect(jsonPath("$.checkoutPath", containsString("execution-1001")))
                 .andExpect(jsonPath("$.exitCode", is(0)))
                 .andExpect(jsonPath("$.logSummary", containsString("fake shell execution")));
+
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastRequest.branch()).isEqualTo("main");
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastRequest.accountName()).isEqualTo("paddyKim");
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastRequest.credential()).isEqualTo("public-repo-password");
+
+        SourceRepository updated = sourceRepositoryRepository.findById(repository.getId()).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(updated.getCloneCount()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(updated.getBuildCount()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(updated.getLastClonedAt()).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(updated.getLastBuiltAt()).isNotNull();
     }
 
     @Test
@@ -367,18 +386,37 @@ class SourceRepositoryControllerTests {
 
         @Bean
         @Primary
-        PlatformCicdExecutionClient testPlatformCicdExecutionClient() {
-            return request -> new PlatformCicdExecutionResponse(
+        RecordingPlatformCicdExecutionClient testPlatformCicdExecutionClient() {
+            return new RecordingPlatformCicdExecutionClient();
+        }
+    }
+
+    static class RecordingPlatformCicdExecutionClient implements PlatformCicdExecutionClient {
+
+        private PlatformCicdExecutionCreateRequest lastRequest;
+
+        @Override
+        public PlatformCicdExecutionResponse createExecution(PlatformCicdExecutionCreateRequest request) {
+            this.lastRequest = request;
+            return new PlatformCicdExecutionResponse(
                     1001L,
                     request.portalRequestId(),
                     "SUCCEEDED",
                     "Shell script completed with exit code 0",
+                    "SUCCEEDED",
+                    "Git clone completed for branch " + request.branch(),
+                    request.branch(),
+                    "/tmp/execution-1001/repository",
                     0,
                     "fake shell execution for " + request.repositoryUrl(),
                     java.time.Instant.parse("2026-06-23T00:00:00Z"),
                     java.time.Instant.parse("2026-06-23T00:00:01Z"),
                     java.time.Instant.parse("2026-06-23T00:00:00Z")
             );
+        }
+
+        void reset() {
+            lastRequest = null;
         }
     }
 }
