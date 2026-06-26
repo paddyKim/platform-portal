@@ -8,6 +8,8 @@ public interface ApplicationRepository extends JpaRepository<Application, Long> 
 
     boolean existsByName(String name);
 
+    Optional<Application> findByName(String name);
+
     @EntityGraph(attributePaths = "environments")
     Optional<Application> findWithEnvironmentsById(Long id);
 }

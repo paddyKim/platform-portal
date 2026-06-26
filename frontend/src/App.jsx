@@ -173,6 +173,7 @@ function App() {
   const [apiStatus, setApiStatus] = useState('Checking API')
   const [lastCheckedAt, setLastCheckedAt] = useState('')
   const [applications, setApplications] = useState([])
+  const [argoCdApplications, setArgoCdApplications] = useState([])
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [activeSection, setActiveSection] = useState('cicd')
   const [applicationDetail, setApplicationDetail] = useState(null)
@@ -208,8 +209,48 @@ function App() {
     targetEnvironmentId: '',
     targetComponentId: '',
   })
+  const [environmentForm, setEnvironmentForm] = useState({
+    environment: 'dev',
+    namespace: 'dev',
+    argocdApplicationName: '',
+    helmValuesPath: '',
+    serviceUrl: '',
+  })
+  const [componentForm, setComponentForm] = useState({
+    name: '',
+    kind: 'api',
+    deploymentName: '',
+    serviceName: '',
+    imageRepository: '',
+  })
+  const [manifestForm, setManifestForm] = useState({
+    manifestRepositoryUrl: '',
+    manifestBranch: 'main',
+    valuesPath: '',
+    imageTagKey: '',
+  })
+  const [argoCdApplicationForm, setArgoCdApplicationForm] = useState({
+    name: '',
+    project: 'default',
+    sourceRepoUrl: '',
+    sourcePath: '.',
+    targetRevision: 'HEAD',
+    destinationServer: 'https://kubernetes.default.svc',
+    destinationNamespace: 'default',
+    automated: false,
+    prune: false,
+    selfHeal: false,
+  })
+  const [appCommandText, setAppCommandText] = useState('')
+  const [appCommandView, setAppCommandView] = useState('idle')
   const [editingBuildProfileId, setEditingBuildProfileId] = useState(null)
-  const [catalogState, setCatalogState] = useState('loading')
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState(null)
+  const [componentFormEnvironmentId, setComponentFormEnvironmentId] = useState(null)
+  const [editingComponentId, setEditingComponentId] = useState(null)
+  const [editingManifestComponentId, setEditingManifestComponentId] = useState(null)
+  const [catalogState, setCatalogState] = useState('idle')
+  const [catalogManagementState, setCatalogManagementState] = useState('idle')
+  const [appCommandState, setAppCommandState] = useState('idle')
   const [detailState, setDetailState] = useState('idle')
   const [statusState, setStatusState] = useState('idle')
   const [runtimeState, setRuntimeState] = useState('idle')
@@ -219,6 +260,8 @@ function App() {
   const [sourceRepositoryMessage, setSourceRepositoryMessage] = useState('')
   const [buildProfileMessage, setBuildProfileMessage] = useState('')
   const [buildExecutionMessage, setBuildExecutionMessage] = useState('')
+  const [catalogManagementMessage, setCatalogManagementMessage] = useState('')
+  const [appCommandMessage, setAppCommandMessage] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
@@ -240,35 +283,6 @@ function App() {
     }
 
     loadHealth()
-
-    return () => {
-      ignore = true
-    }
-  }, [])
-
-  useEffect(() => {
-    let ignore = false
-
-    async function loadApplications() {
-      setCatalogState('loading')
-      setErrorMessage('')
-
-      try {
-        const data = await fetchJson('/api/applications')
-        if (!ignore) {
-          setApplications(data)
-          setSelectedApplicationId(data[0]?.id ?? null)
-          setCatalogState(data.length > 0 ? 'ready' : 'empty')
-        }
-      } catch (error) {
-        if (!ignore) {
-          setErrorMessage(error.message)
-          setCatalogState('error')
-        }
-      }
-    }
-
-    loadApplications()
 
     return () => {
       ignore = true
@@ -596,6 +610,74 @@ function App() {
     setSourceRepositories(repositories)
   }
 
+  async function reloadApplications(nextSelectedApplicationId = selectedApplicationId) {
+    const data = await fetchJson('/api/applications')
+    setApplications(data)
+    setCatalogState(data.length > 0 ? 'ready' : 'empty')
+    if (nextSelectedApplicationId && data.some((application) => application.id === nextSelectedApplicationId)) {
+      setSelectedApplicationId(nextSelectedApplicationId)
+      return
+    }
+    setSelectedApplicationId(data[0]?.id ?? null)
+  }
+
+  async function handleAppCommandSubmit(event) {
+    event.preventDefault()
+    const command = appCommandText.trim()
+    if (!command) {
+      return
+    }
+
+    setAppCommandState('submitting')
+    setAppCommandMessage('')
+
+    try {
+      const interpretation = await fetchJson('/api/application-commands/interpret', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ command }),
+      })
+
+      if (interpretation.intent === 'OPEN_APPLICATION_CREATE_FORM') {
+        resetArgoCdApplicationForm()
+        setAppCommandView('create')
+        setCatalogState('idle')
+        setSelectedApplicationId(null)
+        setApplicationDetail(null)
+        setAppCommandMessage('어플리케이션 등록 화면으로 이동했습니다.')
+        setAppCommandState('ready')
+        return
+      }
+
+      if (interpretation.intent !== 'LIST_APPLICATIONS') {
+        setAppCommandMessage(interpretation.message)
+        setAppCommandState('error')
+        return
+      }
+
+      const data = await fetchJson(interpretation.resultApiPath || '/api/argocd/applications')
+      setArgoCdApplications(data)
+      setCatalogState(data.length > 0 ? 'ready' : 'empty')
+      setAppCommandView('list')
+      setSelectedApplicationId(null)
+      setApplicationDetail(null)
+
+      if (data.length === 0) {
+        setAppCommandMessage('등록된 application이 없습니다.')
+        setAppCommandState('ready')
+        return
+      }
+
+      setAppCommandMessage(`${data.length}개 application을 불러왔습니다.`)
+      setAppCommandState('ready')
+    } catch (error) {
+      setAppCommandMessage(error.message)
+      setAppCommandState('error')
+    }
+  }
+
   async function reloadBuildProfiles(repositoryId = selectedSourceRepositoryId) {
     if (!repositoryId) {
       setBuildProfiles([])
@@ -677,6 +759,289 @@ function App() {
       targetEnvironmentId: profile.targetEnvironmentId ? String(profile.targetEnvironmentId) : '',
       targetComponentId: profile.targetComponentId ? String(profile.targetComponentId) : '',
     }))
+  }
+
+  function resetArgoCdApplicationForm() {
+    setArgoCdApplicationForm({
+      name: '',
+      project: 'default',
+      sourceRepoUrl: '',
+      sourcePath: '.',
+      targetRevision: 'HEAD',
+      destinationServer: 'https://kubernetes.default.svc',
+      destinationNamespace: 'default',
+      automated: false,
+      prune: false,
+      selfHeal: false,
+    })
+  }
+
+  async function handleCreateArgoCdApplication(event) {
+    event.preventDefault()
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+
+    try {
+      const createdApplication = await fetchJson('/api/argocd/applications', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(argoCdApplicationForm),
+      })
+      setArgoCdApplications((current) => [createdApplication, ...current])
+      setCatalogManagementMessage(`${createdApplication.name} ArgoCD application을 등록했습니다.`)
+      setCatalogManagementState('ready')
+      resetArgoCdApplicationForm()
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
+  }
+
+  function resetEnvironmentForm() {
+    setEditingEnvironmentId(null)
+    setEnvironmentForm({
+      environment: 'dev',
+      namespace: 'dev',
+      argocdApplicationName: '',
+      helmValuesPath: '',
+      serviceUrl: '',
+    })
+  }
+
+  function handleEditEnvironment(environment) {
+    setEditingEnvironmentId(environment.id)
+    setEnvironmentForm({
+      environment: environment.environment,
+      namespace: environment.namespace,
+      argocdApplicationName: environment.argocdApplicationName,
+      helmValuesPath: environment.helmValuesPath,
+      serviceUrl: environment.serviceUrl,
+    })
+  }
+
+  async function handleSaveEnvironment(event) {
+    event.preventDefault()
+    if (!selectedApplicationId) {
+      return
+    }
+
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+    const path = editingEnvironmentId
+      ? `/api/applications/${selectedApplicationId}/environments/${editingEnvironmentId}`
+      : `/api/applications/${selectedApplicationId}/environments`
+    const method = editingEnvironmentId ? 'PUT' : 'POST'
+
+    try {
+      const detail = await fetchJson(path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(environmentForm),
+      })
+      setApplicationDetail(detail)
+      await reloadApplications(selectedApplicationId)
+      resetEnvironmentForm()
+      setCatalogManagementMessage(editingEnvironmentId ? 'Environment updated' : 'Environment created')
+      setCatalogManagementState('ready')
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
+  }
+
+  async function handleDeleteEnvironment(environmentId) {
+    if (!selectedApplicationId) {
+      return
+    }
+    const confirmed = window.confirm('Delete this environment and all components?')
+    if (!confirmed) {
+      return
+    }
+
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+
+    try {
+      const detail = await fetchJson(`/api/applications/${selectedApplicationId}/environments/${environmentId}`, {
+        method: 'DELETE',
+      })
+      setApplicationDetail(detail)
+      await reloadApplications(selectedApplicationId)
+      resetEnvironmentForm()
+      setCatalogManagementMessage('Environment deleted')
+      setCatalogManagementState('ready')
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
+  }
+
+  function resetComponentForm(environmentId = null) {
+    setComponentFormEnvironmentId(environmentId)
+    setEditingComponentId(null)
+    setComponentForm({
+      name: '',
+      kind: 'api',
+      deploymentName: '',
+      serviceName: '',
+      imageRepository: '',
+    })
+  }
+
+  function handleEditComponent(environmentId, component) {
+    setComponentFormEnvironmentId(environmentId)
+    setEditingComponentId(component.id)
+    setComponentForm({
+      name: component.name,
+      kind: component.kind,
+      deploymentName: component.deploymentName,
+      serviceName: component.serviceName,
+      imageRepository: component.imageRepository,
+    })
+  }
+
+  async function handleSaveComponent(event, environmentId) {
+    event.preventDefault()
+    if (!selectedApplicationId) {
+      return
+    }
+
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+    const path = editingComponentId
+      ? `/api/applications/${selectedApplicationId}/environments/${environmentId}/components/${editingComponentId}`
+      : `/api/applications/${selectedApplicationId}/environments/${environmentId}/components`
+    const method = editingComponentId ? 'PUT' : 'POST'
+
+    try {
+      const detail = await fetchJson(path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(componentForm),
+      })
+      setApplicationDetail(detail)
+      resetComponentForm(environmentId)
+      setCatalogManagementMessage(editingComponentId ? 'Component updated' : 'Component created')
+      setCatalogManagementState('ready')
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
+  }
+
+  async function handleDeleteComponent(environmentId, componentId) {
+    if (!selectedApplicationId) {
+      return
+    }
+    const confirmed = window.confirm('Delete this component?')
+    if (!confirmed) {
+      return
+    }
+
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+
+    try {
+      const detail = await fetchJson(
+        `/api/applications/${selectedApplicationId}/environments/${environmentId}/components/${componentId}`,
+        { method: 'DELETE' },
+      )
+      setApplicationDetail(detail)
+      resetComponentForm(environmentId)
+      setCatalogManagementMessage('Component deleted')
+      setCatalogManagementState('ready')
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
+  }
+
+  function resetManifestForm() {
+    setEditingManifestComponentId(null)
+    setManifestForm({
+      manifestRepositoryUrl: '',
+      manifestBranch: 'main',
+      valuesPath: '',
+      imageTagKey: '',
+    })
+  }
+
+  function handleEditManifestMapping(component) {
+    setEditingManifestComponentId(component.id)
+    setManifestForm({
+      manifestRepositoryUrl: component.manifestMapping?.manifestRepositoryUrl || '',
+      manifestBranch: component.manifestMapping?.manifestBranch || 'main',
+      valuesPath: component.manifestMapping?.valuesPath || '',
+      imageTagKey: component.manifestMapping?.imageTagKey || '',
+    })
+  }
+
+  async function handleSaveManifestMapping(event, environmentId, componentId) {
+    event.preventDefault()
+    if (!selectedApplicationId) {
+      return
+    }
+
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+    const component = applicationDetail?.environments
+      ?.find((environment) => environment.id === environmentId)
+      ?.components
+      ?.find((candidate) => candidate.id === componentId)
+    const method = component?.manifestMapping ? 'PUT' : 'POST'
+
+    try {
+      const detail = await fetchJson(
+        `/api/applications/${selectedApplicationId}/environments/${environmentId}/components/${componentId}/manifest-mapping`,
+        {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(manifestForm),
+        },
+      )
+      setApplicationDetail(detail)
+      resetManifestForm()
+      setCatalogManagementMessage(component?.manifestMapping ? 'Manifest mapping updated' : 'Manifest mapping created')
+      setCatalogManagementState('ready')
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
+  }
+
+  async function handleDeleteManifestMapping(environmentId, componentId) {
+    if (!selectedApplicationId) {
+      return
+    }
+    const confirmed = window.confirm('Delete this manifest mapping?')
+    if (!confirmed) {
+      return
+    }
+
+    setCatalogManagementState('submitting')
+    setCatalogManagementMessage('')
+
+    try {
+      const detail = await fetchJson(
+        `/api/applications/${selectedApplicationId}/environments/${environmentId}/components/${componentId}/manifest-mapping`,
+        { method: 'DELETE' },
+      )
+      setApplicationDetail(detail)
+      resetManifestForm()
+      setCatalogManagementMessage('Manifest mapping deleted')
+      setCatalogManagementState('ready')
+    } catch (error) {
+      setCatalogManagementMessage(error.message)
+      setCatalogManagementState('error')
+    }
   }
 
   async function handleCreateSourceRepository(event) {
@@ -968,20 +1333,45 @@ function App() {
       )}
 
       {activeSection === 'apps' && (
-        <section className="catalog-layout">
-          <aside className="catalog-panel" aria-label="Applications">
-            {renderApplicationPanel(
-            applications,
-            selectedApplicationId,
-            setSelectedApplicationId,
-            catalogState,
+        <section className="app-management-workspace" aria-label="Application management workspace">
+          {renderAppCommandEntry(
+            appCommandText,
+            setAppCommandText,
+            handleAppCommandSubmit,
+            appCommandState,
+            appCommandMessage,
           )}
-          </aside>
 
-          <section className="detail-panel" aria-label="Application detail">
-            {detailState === 'idle' && <p className="muted">Select an application.</p>}
-            {detailState === 'loading' && <p className="muted">Loading application detail...</p>}
-            {detailState === 'error' && <p className="muted">Application detail is unavailable.</p>}
+          {(appCommandView === 'list' || appCommandView === 'create' || appCommandView === 'detail') && (
+            <div className={appCommandView === 'detail' ? 'catalog-layout' : 'catalog-layout single'}>
+              {appCommandView === 'list' && (
+              <section className="catalog-panel" aria-label="ArgoCD applications">
+                {renderArgoCdApplicationList(argoCdApplications, catalogState)}
+              </section>
+              )}
+
+              {appCommandView === 'create' && (
+              <section className="detail-panel app-registration-panel" aria-label="Application registration">
+                {catalogManagementMessage && (
+                  <p className={catalogManagementState === 'error' ? 'status-message' : 'success-message'}>
+                    {catalogManagementMessage}
+                  </p>
+                )}
+                {renderArgoCdApplicationCreateForm(
+                  argoCdApplicationForm,
+                  setArgoCdApplicationForm,
+                  handleCreateArgoCdApplication,
+                  resetArgoCdApplicationForm,
+                  catalogManagementState,
+                )}
+              </section>
+              )}
+
+              {appCommandView === 'detail' && (
+              <section className="detail-panel" aria-label="Application detail">
+              {detailState === 'idle' && <p className="muted">Select an application.</p>}
+              {detailState === 'loading' && <p className="muted">Loading application detail...</p>}
+              {detailState === 'error' && <p className="muted">Application detail is unavailable.</p>}
 
             {detailState === 'ready' && applicationDetail && (
             <>
@@ -1000,12 +1390,27 @@ function App() {
                 </a>
               </header>
 
+              {catalogManagementMessage && (
+                <p className={catalogManagementState === 'error' ? 'status-message' : 'success-message'}>
+                  {catalogManagementMessage}
+                </p>
+              )}
+
               <div className="metadata-grid">
                 {renderMetadata('Owner', applicationDetail.owner)}
                 {renderMetadata('Repository', applicationDetail.repositoryUrl)}
                 {renderMetadata('Environments', applicationDetail.environments.length)}
                 {renderMetadata('Selected', selectedApplication?.name || applicationDetail.name)}
               </div>
+
+              {renderEnvironmentForm(
+                environmentForm,
+                setEnvironmentForm,
+                editingEnvironmentId,
+                handleSaveEnvironment,
+                resetEnvironmentForm,
+                catalogManagementState,
+              )}
 
               <div className="environment-stack">
                 {applicationDetail.environments.map((environment) => (
@@ -1016,6 +1421,19 @@ function App() {
                         <h3>{environment.environment}</h3>
                       </div>
                       <span>{environment.namespace}</span>
+                    </div>
+
+                    <div className="management-actions">
+                      <button onClick={() => handleEditEnvironment(environment)} type="button">
+                        환경 수정
+                      </button>
+                      <button
+                        className="danger-action"
+                        onClick={() => handleDeleteEnvironment(environment.id)}
+                        type="button"
+                      >
+                        환경 삭제
+                      </button>
                     </div>
 
                     <div className="metadata-grid compact">
@@ -1036,6 +1454,7 @@ function App() {
                         <span role="columnheader">Deployment</span>
                         <span role="columnheader">Service</span>
                         <span role="columnheader">Image</span>
+                        <span role="columnheader">Actions</span>
                       </div>
                       {environment.components.map((component) => (
                         <div className="component-row" key={component.id} role="row">
@@ -1043,49 +1462,564 @@ function App() {
                           <span role="cell">{component.kind}</span>
                           <span role="cell">{component.deploymentName}</span>
                           <span role="cell">{component.serviceName}</span>
-                          <span role="cell">{component.imageRepository}</span>
+                          <span role="cell">
+                            <strong>{component.imageRepository}</strong>
+                            <small>
+                              {component.manifestMapping
+                                ? `${component.manifestMapping.valuesPath} / ${component.manifestMapping.imageTagKey}`
+                                : 'No manifest mapping'}
+                            </small>
+                          </span>
+                          <span role="cell" className="component-actions">
+                            <button onClick={() => handleEditComponent(environment.id, component)} type="button">
+                              수정
+                            </button>
+                            <button onClick={() => handleEditManifestMapping(component)} type="button">
+                              Manifest
+                            </button>
+                            <button
+                              className="danger-action"
+                              onClick={() => handleDeleteComponent(environment.id, component.id)}
+                              type="button"
+                            >
+                              삭제
+                            </button>
+                          </span>
                         </div>
                       ))}
                     </div>
+
+                    {renderComponentForm(
+                      environment,
+                      componentForm,
+                      setComponentForm,
+                      componentFormEnvironmentId,
+                      editingComponentId,
+                      handleSaveComponent,
+                      resetComponentForm,
+                      catalogManagementState,
+                    )}
+
+                    {editingManifestComponentId && environment.components.some(
+                      (component) => component.id === editingManifestComponentId,
+                    ) && renderManifestMappingForm(
+                      environment,
+                      environment.components.find((component) => component.id === editingManifestComponentId),
+                      manifestForm,
+                      setManifestForm,
+                      handleSaveManifestMapping,
+                      handleDeleteManifestMapping,
+                      resetManifestForm,
+                      catalogManagementState,
+                    )}
                   </article>
                 ))}
               </div>
-            </>
+              </>
+            )}
+              </section>
+              )}
+            </div>
           )}
-          </section>
         </section>
       )}
     </main>
   )
 }
 
-function renderApplicationPanel(applications, selectedApplicationId, setSelectedApplicationId, catalogState) {
+function renderArgoCdApplicationList(applications, catalogState) {
   return (
     <>
       <div className="panel-heading">
-        <h3>Live Applications</h3>
+        <div>
+          <p className="eyebrow">Live Cluster</p>
+          <h3>ArgoCD Applications</h3>
+        </div>
         <span>{applications.length}</span>
       </div>
 
-      {catalogState === 'loading' && <p className="muted">Loading live applications...</p>}
-      {catalogState === 'empty' && <p className="muted">No applications discovered.</p>}
+      {catalogState === 'loading' && <p className="muted">Loading ArgoCD applications...</p>}
+      {catalogState === 'empty' && <p className="muted">No ArgoCD applications discovered.</p>}
 
       {catalogState === 'ready' && (
-        <div className="application-list">
+        <div className="argocd-application-list">
           {applications.map((application) => (
-            <button
-              className={application.id === selectedApplicationId ? 'application-item active' : 'application-item'}
-              key={application.id}
-              onClick={() => setSelectedApplicationId(application.id)}
-              type="button"
-            >
-              <span>{application.name}</span>
-              <small>{application.environments.length} environment</small>
-            </button>
+            <article className="argocd-application-card" key={`${application.argocdNamespace}-${application.name}`}>
+              <div className="argocd-application-main">
+                <div>
+                  <p className="eyebrow">{application.project}</p>
+                  <h3>{application.name}</h3>
+                </div>
+                <div className="argocd-status-pills">
+                  <strong className={`status-value ${statusTone(application.syncStatus)}`}>
+                    {application.syncStatus}
+                  </strong>
+                  <strong className={`status-value ${statusTone(application.healthStatus)}`}>
+                    {application.healthStatus}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="argocd-application-grid">
+                {renderMetadata('ArgoCD Namespace', application.argocdNamespace)}
+                {renderMetadata('Destination Namespace', application.destinationNamespace)}
+                {renderMetadata('Cluster', application.destinationServer)}
+                {renderMetadata('Revision', application.targetRevision)}
+                {renderMetadata('Repository', application.sourceRepoUrl)}
+                {renderMetadata('Path', application.sourcePath)}
+                {renderMetadata('Operation', application.operationPhase)}
+                {renderMetadata('Reconciled', formatDateTime(application.reconciledAt))}
+              </div>
+            </article>
           ))}
         </div>
       )}
     </>
+  )
+}
+
+function renderArgoCdApplicationCreateForm(
+  argoCdApplicationForm,
+  setArgoCdApplicationForm,
+  handleCreateArgoCdApplication,
+  resetArgoCdApplicationForm,
+  catalogManagementState,
+) {
+  return (
+    <form className="management-form argocd-create-form" onSubmit={handleCreateArgoCdApplication}>
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">ArgoCD Application</p>
+          <h3>Register application</h3>
+        </div>
+        <button className="secondary-action" onClick={resetArgoCdApplicationForm} type="button">
+          초기화
+        </button>
+      </div>
+
+      <div className="management-form-grid argocd-create-grid">
+        <label>
+          <span>Name</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              name: event.target.value,
+            }))}
+            required
+            type="text"
+            value={argoCdApplicationForm.name}
+          />
+        </label>
+        <label>
+          <span>Project</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              project: event.target.value,
+            }))}
+            required
+            type="text"
+            value={argoCdApplicationForm.project}
+          />
+        </label>
+        <label className="wide-field">
+          <span>Source Repository URL</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              sourceRepoUrl: event.target.value,
+            }))}
+            required
+            type="url"
+            value={argoCdApplicationForm.sourceRepoUrl}
+          />
+        </label>
+        <label>
+          <span>Source Path</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              sourcePath: event.target.value,
+            }))}
+            required
+            type="text"
+            value={argoCdApplicationForm.sourcePath}
+          />
+        </label>
+        <label>
+          <span>Target Revision</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              targetRevision: event.target.value,
+            }))}
+            required
+            type="text"
+            value={argoCdApplicationForm.targetRevision}
+          />
+        </label>
+        <label className="wide-field">
+          <span>Destination Server</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              destinationServer: event.target.value,
+            }))}
+            required
+            type="text"
+            value={argoCdApplicationForm.destinationServer}
+          />
+        </label>
+        <label>
+          <span>Destination Namespace</span>
+          <input
+            onChange={(event) => setArgoCdApplicationForm((current) => ({
+              ...current,
+              destinationNamespace: event.target.value,
+            }))}
+            required
+            type="text"
+            value={argoCdApplicationForm.destinationNamespace}
+          />
+        </label>
+      </div>
+
+      <div className="argocd-sync-options">
+        {renderCheckbox('Automated sync', argoCdApplicationForm.automated, (checked) => (
+          setArgoCdApplicationForm((current) => ({ ...current, automated: checked }))
+        ))}
+        {renderCheckbox('Prune', argoCdApplicationForm.prune, (checked) => (
+          setArgoCdApplicationForm((current) => ({ ...current, prune: checked }))
+        ))}
+        {renderCheckbox('Self heal', argoCdApplicationForm.selfHeal, (checked) => (
+          setArgoCdApplicationForm((current) => ({ ...current, selfHeal: checked }))
+        ))}
+      </div>
+
+      <button disabled={catalogManagementState === 'submitting'} type="submit">
+        {catalogManagementState === 'submitting' ? 'Registering...' : 'Register ArgoCD application'}
+      </button>
+    </form>
+  )
+}
+
+function renderCheckbox(label, checked, onChange) {
+  return (
+    <label className="checkbox-field">
+      <input
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span>{label}</span>
+    </label>
+  )
+}
+
+function renderAppCommandEntry(
+  appCommandText,
+  setAppCommandText,
+  handleAppCommandSubmit,
+  appCommandState,
+  appCommandMessage,
+) {
+  return (
+    <section className="app-command-panel" aria-label="Application command entry">
+      <form className="app-command-form" onSubmit={handleAppCommandSubmit}>
+        <span aria-hidden="true">+</span>
+        <input
+          aria-label="Application command"
+          onChange={(event) => setAppCommandText(event.target.value)}
+          placeholder="등록된 어플리케이션 목록 보여줘"
+          type="text"
+          value={appCommandText}
+        />
+        <button disabled={appCommandState === 'submitting'} type="submit">
+          {appCommandState === 'submitting' ? 'Loading...' : 'Run'}
+        </button>
+      </form>
+      {appCommandMessage && (
+        <p className={appCommandState === 'error' ? 'status-message' : 'success-message'}>
+          {appCommandMessage}
+        </p>
+      )}
+    </section>
+  )
+}
+
+function renderEnvironmentForm(
+  environmentForm,
+  setEnvironmentForm,
+  editingEnvironmentId,
+  handleSaveEnvironment,
+  resetEnvironmentForm,
+  catalogManagementState,
+) {
+  return (
+    <form className="management-form" onSubmit={handleSaveEnvironment}>
+      <div className="panel-heading">
+        <h3>{editingEnvironmentId ? 'Edit environment' : 'New environment'}</h3>
+        {editingEnvironmentId && (
+          <button className="secondary-action" onClick={resetEnvironmentForm} type="button">
+            새 환경
+          </button>
+        )}
+      </div>
+      <div className="management-form-grid">
+        <label>
+          <span>Environment</span>
+          <input
+            onChange={(event) => setEnvironmentForm((current) => ({
+              ...current,
+              environment: event.target.value,
+            }))}
+            required
+            type="text"
+            value={environmentForm.environment}
+          />
+        </label>
+        <label>
+          <span>Namespace</span>
+          <input
+            onChange={(event) => setEnvironmentForm((current) => ({
+              ...current,
+              namespace: event.target.value,
+            }))}
+            required
+            type="text"
+            value={environmentForm.namespace}
+          />
+        </label>
+        <label>
+          <span>ArgoCD app</span>
+          <input
+            onChange={(event) => setEnvironmentForm((current) => ({
+              ...current,
+              argocdApplicationName: event.target.value,
+            }))}
+            required
+            type="text"
+            value={environmentForm.argocdApplicationName}
+          />
+        </label>
+        <label>
+          <span>Service URL</span>
+          <input
+            onChange={(event) => setEnvironmentForm((current) => ({
+              ...current,
+              serviceUrl: event.target.value,
+            }))}
+            required
+            type="text"
+            value={environmentForm.serviceUrl}
+          />
+        </label>
+        <label className="wide-field">
+          <span>Helm values path</span>
+          <input
+            onChange={(event) => setEnvironmentForm((current) => ({
+              ...current,
+              helmValuesPath: event.target.value,
+            }))}
+            required
+            type="text"
+            value={environmentForm.helmValuesPath}
+          />
+        </label>
+      </div>
+      <button disabled={catalogManagementState === 'submitting'} type="submit">
+        {editingEnvironmentId ? 'Update environment' : 'Create environment'}
+      </button>
+    </form>
+  )
+}
+
+function renderComponentForm(
+  environment,
+  componentForm,
+  setComponentForm,
+  componentFormEnvironmentId,
+  editingComponentId,
+  handleSaveComponent,
+  resetComponentForm,
+  catalogManagementState,
+) {
+  const isActive = componentFormEnvironmentId === environment.id
+
+  if (!isActive) {
+    return (
+      <button className="secondary-action" onClick={() => resetComponentForm(environment.id)} type="button">
+        컴포넌트 추가
+      </button>
+    )
+  }
+
+  return (
+    <form className="management-form" onSubmit={(event) => handleSaveComponent(event, environment.id)}>
+      <div className="panel-heading">
+        <h3>{editingComponentId ? 'Edit component' : 'New component'}</h3>
+        <button className="secondary-action" onClick={() => resetComponentForm(null)} type="button">
+          닫기
+        </button>
+      </div>
+      <div className="management-form-grid">
+        <label>
+          <span>Name</span>
+          <input
+            onChange={(event) => setComponentForm((current) => ({
+              ...current,
+              name: event.target.value,
+            }))}
+            required
+            type="text"
+            value={componentForm.name}
+          />
+        </label>
+        <label>
+          <span>Kind</span>
+          <input
+            onChange={(event) => setComponentForm((current) => ({
+              ...current,
+              kind: event.target.value,
+            }))}
+            required
+            type="text"
+            value={componentForm.kind}
+          />
+        </label>
+        <label>
+          <span>Deployment</span>
+          <input
+            onChange={(event) => setComponentForm((current) => ({
+              ...current,
+              deploymentName: event.target.value,
+            }))}
+            required
+            type="text"
+            value={componentForm.deploymentName}
+          />
+        </label>
+        <label>
+          <span>Service</span>
+          <input
+            onChange={(event) => setComponentForm((current) => ({
+              ...current,
+              serviceName: event.target.value,
+            }))}
+            required
+            type="text"
+            value={componentForm.serviceName}
+          />
+        </label>
+        <label className="wide-field">
+          <span>Image repository</span>
+          <input
+            onChange={(event) => setComponentForm((current) => ({
+              ...current,
+              imageRepository: event.target.value,
+            }))}
+            required
+            type="text"
+            value={componentForm.imageRepository}
+          />
+        </label>
+      </div>
+      <button disabled={catalogManagementState === 'submitting'} type="submit">
+        {editingComponentId ? 'Update component' : 'Create component'}
+      </button>
+    </form>
+  )
+}
+
+function renderManifestMappingForm(
+  environment,
+  component,
+  manifestForm,
+  setManifestForm,
+  handleSaveManifestMapping,
+  handleDeleteManifestMapping,
+  resetManifestForm,
+  catalogManagementState,
+) {
+  return (
+    <form
+      className="management-form manifest-form"
+      onSubmit={(event) => handleSaveManifestMapping(event, environment.id, component.id)}
+    >
+      <div className="panel-heading">
+        <div>
+          <p className="eyebrow">Manifest Mapping</p>
+          <h3>{component.name}</h3>
+        </div>
+        <button className="secondary-action" onClick={resetManifestForm} type="button">
+          닫기
+        </button>
+      </div>
+      <div className="management-form-grid">
+        <label className="wide-field">
+          <span>Manifest repository</span>
+          <input
+            onChange={(event) => setManifestForm((current) => ({
+              ...current,
+              manifestRepositoryUrl: event.target.value,
+            }))}
+            required
+            type="url"
+            value={manifestForm.manifestRepositoryUrl}
+          />
+        </label>
+        <label>
+          <span>Branch</span>
+          <input
+            onChange={(event) => setManifestForm((current) => ({
+              ...current,
+              manifestBranch: event.target.value,
+            }))}
+            required
+            type="text"
+            value={manifestForm.manifestBranch}
+          />
+        </label>
+        <label>
+          <span>Values path</span>
+          <input
+            onChange={(event) => setManifestForm((current) => ({
+              ...current,
+              valuesPath: event.target.value,
+            }))}
+            required
+            type="text"
+            value={manifestForm.valuesPath}
+          />
+        </label>
+        <label>
+          <span>Image tag key</span>
+          <input
+            onChange={(event) => setManifestForm((current) => ({
+              ...current,
+              imageTagKey: event.target.value,
+            }))}
+            required
+            type="text"
+            value={manifestForm.imageTagKey}
+          />
+        </label>
+      </div>
+      <div className="management-actions">
+        <button disabled={catalogManagementState === 'submitting'} type="submit">
+          {component.manifestMapping ? 'Update mapping' : 'Create mapping'}
+        </button>
+        {component.manifestMapping && (
+          <button
+            className="danger-action"
+            onClick={() => handleDeleteManifestMapping(environment.id, component.id)}
+            type="button"
+          >
+            Mapping 삭제
+          </button>
+        )}
+      </div>
+    </form>
   )
 }
 

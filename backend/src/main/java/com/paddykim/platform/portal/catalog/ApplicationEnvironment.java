@@ -76,6 +76,26 @@ public class ApplicationEnvironment {
         touch();
     }
 
+    public void update(
+            String environment,
+            String namespace,
+            String argocdApplicationName,
+            String helmValuesPath,
+            String serviceUrl
+    ) {
+        this.environment = environment;
+        this.namespace = namespace;
+        this.argocdApplicationName = argocdApplicationName;
+        this.helmValuesPath = helmValuesPath;
+        this.serviceUrl = serviceUrl;
+        touch();
+    }
+
+    public void removeComponent(ApplicationComponent component) {
+        components.remove(component);
+        touch();
+    }
+
     void setApplication(Application application) {
         this.application = application;
     }

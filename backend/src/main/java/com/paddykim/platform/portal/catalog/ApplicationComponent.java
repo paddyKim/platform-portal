@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
 
@@ -38,6 +39,9 @@ public class ApplicationComponent {
     @Column(name = "image_repository", nullable = false)
     private String imageRepository;
 
+    @OneToOne(mappedBy = "component", cascade = jakarta.persistence.CascadeType.ALL, orphanRemoval = true)
+    private ApplicationManifestMapping manifestMapping;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -67,6 +71,46 @@ public class ApplicationComponent {
         this.applicationEnvironment = applicationEnvironment;
     }
 
+    public void update(
+            String name,
+            String kind,
+            String deploymentName,
+            String serviceName,
+            String imageRepository
+    ) {
+        this.name = name;
+        this.kind = kind;
+        this.deploymentName = deploymentName;
+        this.serviceName = serviceName;
+        this.imageRepository = imageRepository;
+        this.updatedAt = Instant.now();
+    }
+
+    public void upsertManifestMapping(
+            String manifestRepositoryUrl,
+            String manifestBranch,
+            String valuesPath,
+            String imageTagKey
+    ) {
+        if (manifestMapping == null) {
+            manifestMapping = new ApplicationManifestMapping(
+                    this,
+                    manifestRepositoryUrl,
+                    manifestBranch,
+                    valuesPath,
+                    imageTagKey
+            );
+        } else {
+            manifestMapping.update(manifestRepositoryUrl, manifestBranch, valuesPath, imageTagKey);
+        }
+        this.updatedAt = Instant.now();
+    }
+
+    public void removeManifestMapping() {
+        manifestMapping = null;
+        this.updatedAt = Instant.now();
+    }
+
     public Long getId() {
         return id;
     }
@@ -89,6 +133,10 @@ public class ApplicationComponent {
 
     public String getImageRepository() {
         return imageRepository;
+    }
+
+    public ApplicationManifestMapping getManifestMapping() {
+        return manifestMapping;
     }
 
     public Instant getCreatedAt() {

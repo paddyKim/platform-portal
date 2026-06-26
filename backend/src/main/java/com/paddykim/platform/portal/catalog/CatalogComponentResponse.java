@@ -6,7 +6,8 @@ public record CatalogComponentResponse(
         String kind,
         String deploymentName,
         String serviceName,
-        String imageRepository
+        String imageRepository,
+        CatalogManifestMappingResponse manifestMapping
 ) {
 
     static CatalogComponentResponse from(ApplicationComponent component) {
@@ -16,7 +17,8 @@ public record CatalogComponentResponse(
                 component.getKind(),
                 component.getDeploymentName(),
                 component.getServiceName(),
-                component.getImageRepository()
+                component.getImageRepository(),
+                CatalogManifestMappingResponse.from(component.getManifestMapping())
         );
     }
 }

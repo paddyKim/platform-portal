@@ -59,6 +59,19 @@ public class Application {
         touch();
     }
 
+    public void update(String name, String description, String owner, String repositoryUrl) {
+        this.name = name;
+        this.description = description;
+        this.owner = owner;
+        this.repositoryUrl = repositoryUrl;
+        touch();
+    }
+
+    public void removeEnvironment(ApplicationEnvironment environment) {
+        environments.remove(environment);
+        touch();
+    }
+
     private void touch() {
         updatedAt = Instant.now();
     }
