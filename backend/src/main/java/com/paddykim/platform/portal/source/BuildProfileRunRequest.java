@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 
 public record BuildProfileRunRequest(
         @NotBlank String requestedBy,
-        @NotBlank String imageTag,
+        String imageTag,
         String branch,
         String applicationName,
         String environment,

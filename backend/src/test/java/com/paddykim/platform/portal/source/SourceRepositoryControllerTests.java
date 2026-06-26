@@ -218,6 +218,7 @@ class SourceRepositoryControllerTests {
     @Test
     void managesBuildProfilesForSourceRepository() throws Exception {
         SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+        TargetIds target = targetIds();
 
         mockMvc.perform(post("/api/source-repositories/{repositoryId}/build-profiles", repository.getId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -226,16 +227,23 @@ class SourceRepositoryControllerTests {
                                   "name": "backend image build",
                                   "ciTool": "SHELL",
                                   "workingDirectory": ".",
-                                  "script": "./gradlew test"
+                                  "script": "./gradlew test",
+                                  "targetApplicationId": %d,
+                                  "targetEnvironmentId": %d,
+                                  "targetComponentId": %d
                                 }
-                                """))
+                                """.formatted(target.applicationId(), target.environmentId(), target.componentId())))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.sourceRepositoryId", is(repository.getId().intValue())))
                 .andExpect(jsonPath("$.name", is("backend image build")))
                 .andExpect(jsonPath("$.ciTool", is("SHELL")))
                 .andExpect(jsonPath("$.workingDirectory", is(".")))
                 .andExpect(jsonPath("$.script", is("./gradlew test")))
-                .andExpect(jsonPath("$.description", is("")));
+                .andExpect(jsonPath("$.description", is("")))
+                .andExpect(jsonPath("$.targetApplicationName", is("platform-app")))
+                .andExpect(jsonPath("$.targetEnvironment", is("dev")))
+                .andExpect(jsonPath("$.targetComponentName", is("platform-api")))
+                .andExpect(jsonPath("$.targetImageRepository", is("ghcr.io/paddykim/platform-api")));
 
         Long profileId = buildProfileRepository.findBySourceRepositoryId(repository.getId()).get(0).getId();
 
@@ -256,9 +264,12 @@ class SourceRepositoryControllerTests {
                                   "ciTool": "JENKINS",
                                   "workingDirectory": "backend",
                                   "script": "pipeline { agent any }",
-                                  "description": "Draft Jenkins profile"
+                                  "description": "Draft Jenkins profile",
+                                  "targetApplicationId": %d,
+                                  "targetEnvironmentId": %d,
+                                  "targetComponentId": %d
                                 }
-                                """))
+                                """.formatted(target.applicationId(), target.environmentId(), target.componentId())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name", is("jenkins pipeline draft")))
                 .andExpect(jsonPath("$.ciTool", is("JENKINS")))
@@ -279,13 +290,15 @@ class SourceRepositoryControllerTests {
     @Test
     void preparesBuildProfileRunPayload() throws Exception {
         SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+        TargetIds target = targetIds();
         BuildProfile buildProfile = buildProfileRepository.save(new BuildProfile(
                 repository,
                 "backend image build",
                 BuildProfileCiTool.SHELL,
                 ".",
                 "./gradlew test",
-                "Build backend image"
+                "Build backend image",
+                target.toBuildProfileTarget()
         ));
 
         mockMvc.perform(post(
@@ -297,7 +310,6 @@ class SourceRepositoryControllerTests {
                         .content("""
                                 {
                                   "requestedBy": "platform-operator",
-                                  "imageTag": "day21-test",
                                   "branch": "main"
                                 }
                                 """))
@@ -308,7 +320,7 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$.repositoryName", is("platform-app")))
                 .andExpect(jsonPath("$.ciTool", is("SHELL")))
                 .andExpect(jsonPath("$.requestedBy", is("platform-operator")))
-                .andExpect(jsonPath("$.imageTag", is("day21-test")))
+                .andExpect(jsonPath("$.requestedValue", is("artifact-output")))
                 .andExpect(jsonPath("$.branch", is("main")))
                 .andExpect(jsonPath("$.dispatchTarget", is("platform-cicd-http")))
                 .andExpect(jsonPath("$.historyId").isNumber())
@@ -319,11 +331,17 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$.cloneMessage", is("Git clone completed for branch main")))
                 .andExpect(jsonPath("$.checkoutPath", containsString("execution-1001")))
                 .andExpect(jsonPath("$.exitCode", is(0)))
-                .andExpect(jsonPath("$.logSummary", containsString("fake shell execution")));
+                .andExpect(jsonPath("$.logSummary", containsString("fake shell execution")))
+                .andExpect(jsonPath("$.imageRepository", is("ghcr.io/paddykim/platform-api")))
+                .andExpect(jsonPath("$.imageTag", is("day25-test")))
+                .andExpect(jsonPath("$.imageReference", is("ghcr.io/paddykim/platform-api:day25-test")))
+                .andExpect(jsonPath("$.manifestUpdateStatus").isEmpty())
+                .andExpect(jsonPath("$.manifestChangedFilePath").isEmpty());
 
-        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastRequest.branch()).isEqualTo("main");
-        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastRequest.accountName()).isEqualTo("paddyKim");
-        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastRequest.credential()).isEqualTo("public-repo-password");
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastBuildRequest.branch()).isEqualTo("main");
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastBuildRequest.accountName()).isEqualTo("paddyKim");
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastBuildRequest.credential()).isEqualTo("public-repo-password");
+        org.assertj.core.api.Assertions.assertThat(platformCicdExecutionClient.lastDeployRequest).isNull();
 
         SourceRepository updated = sourceRepositoryRepository.findById(repository.getId()).orElseThrow();
         org.assertj.core.api.Assertions.assertThat(updated.getCloneCount()).isEqualTo(1);
@@ -343,10 +361,12 @@ class SourceRepositoryControllerTests {
                 .andExpect(jsonPath("$[0].runnerType", is("SHELL")))
                 .andExpect(jsonPath("$[0].branch", is("main")))
                 .andExpect(jsonPath("$[0].requestedBy", is("platform-operator")))
-                .andExpect(jsonPath("$[0].requestedValue", is("day21-test")))
+                .andExpect(jsonPath("$[0].requestedValue", is("artifact-output")))
                 .andExpect(jsonPath("$[0].status", is("SUCCEEDED")))
                 .andExpect(jsonPath("$[0].cloneStatus", is("SUCCEEDED")))
-                .andExpect(jsonPath("$[0].logSummary", containsString("fake shell execution")));
+                .andExpect(jsonPath("$[0].logSummary", containsString("fake shell execution")))
+                .andExpect(jsonPath("$[0].imageReference", is("ghcr.io/paddykim/platform-api:day25-test")))
+                .andExpect(jsonPath("$[0].manifestUpdateStatus").isEmpty());
     }
 
     @Test
@@ -396,6 +416,7 @@ class SourceRepositoryControllerTests {
     @Test
     void rejectsBuildProfileOutsideRepositoryWorkspace() throws Exception {
         SourceRepository repository = sourceRepositoryRepository.save(sourceRepository("platform-app"));
+        TargetIds target = targetIds();
 
         mockMvc.perform(post("/api/source-repositories/{repositoryId}/build-profiles", repository.getId())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -405,9 +426,12 @@ class SourceRepositoryControllerTests {
                                   "ciTool": "SHELL",
                                   "workingDirectory": "../platform-deploy",
                                   "script": "./gradlew test",
-                                  "description": "Unsafe build profile"
+                                  "description": "Unsafe build profile",
+                                  "targetApplicationId": %d,
+                                  "targetEnvironmentId": %d,
+                                  "targetComponentId": %d
                                 }
-                                """))
+                                """.formatted(target.applicationId(), target.environmentId(), target.componentId())))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message", containsString("workingDirectory")));
     }
@@ -449,6 +473,64 @@ class SourceRepositoryControllerTests {
         );
     }
 
+    private TargetIds targetIds() {
+        Long applicationId = jdbcTemplate.queryForObject(
+                "select id from applications where name = ?",
+                Long.class,
+                "platform-app"
+        );
+        Long environmentId = jdbcTemplate.queryForObject(
+                "select id from application_environments where application_id = ? and environment = ?",
+                Long.class,
+                applicationId,
+                "dev"
+        );
+        Long componentId = jdbcTemplate.queryForObject(
+                "select id from application_components where application_environment_id = ? and name = ?",
+                Long.class,
+                environmentId,
+                "platform-api"
+        );
+
+        return new TargetIds(
+                applicationId,
+                environmentId,
+                componentId,
+                "platform-app",
+                "dev",
+                "platform-api",
+                "ghcr.io/paddykim/platform-api",
+                "platform-deploy/environments/dev/values.yaml",
+                "platform-dev"
+        );
+    }
+
+    private record TargetIds(
+            Long applicationId,
+            Long environmentId,
+            Long componentId,
+            String applicationName,
+            String environment,
+            String componentName,
+            String imageRepository,
+            String helmValuesPath,
+            String argocdApplicationName
+    ) {
+        BuildProfileTarget toBuildProfileTarget() {
+            return new BuildProfileTarget(
+                    applicationId,
+                    environmentId,
+                    componentId,
+                    applicationName,
+                    environment,
+                    componentName,
+                    imageRepository,
+                    helmValuesPath,
+                    argocdApplicationName
+            );
+        }
+    }
+
     @TestConfiguration
     static class TestPlatformCicdExecutionClientConfig {
 
@@ -461,17 +543,41 @@ class SourceRepositoryControllerTests {
 
     static class RecordingPlatformCicdExecutionClient implements PlatformCicdExecutionClient {
 
-        private PlatformCicdExecutionCreateRequest lastRequest;
+        private PlatformCicdExecutionCreateRequest lastBuildRequest;
+        private PlatformCicdExecutionCreateRequest lastDeployRequest;
         private String nextFailureMessage;
 
         @Override
         public PlatformCicdExecutionResponse createExecution(PlatformCicdExecutionCreateRequest request) {
-            this.lastRequest = request;
             if (nextFailureMessage != null) {
                 String message = nextFailureMessage;
                 nextFailureMessage = null;
                 throw new SourceRepositoryValidationException(message);
             }
+            if ("DEPLOY_IMAGE".equals(request.requestType())) {
+                this.lastDeployRequest = request;
+                return new PlatformCicdExecutionResponse(
+                        1002L,
+                        request.portalRequestId(),
+                        "SUCCEEDED",
+                        "Updated api.image.tag from 1fd847c to " + request.requestedValue(),
+                        null,
+                        null,
+                        request.branch(),
+                        null,
+                        null,
+                        null,
+                        "platform-deploy/environments/dev/values.yaml",
+                        null,
+                        null,
+                        null,
+                        null,
+                        java.time.Instant.parse("2026-06-23T00:00:02Z"),
+                        java.time.Instant.parse("2026-06-23T00:00:03Z"),
+                        java.time.Instant.parse("2026-06-23T00:00:02Z")
+                );
+            }
+            this.lastBuildRequest = request;
             return new PlatformCicdExecutionResponse(
                     1001L,
                     request.portalRequestId(),
@@ -483,6 +589,11 @@ class SourceRepositoryControllerTests {
                     "/tmp/execution-1001/repository",
                     0,
                     "fake shell execution for " + request.repositoryUrl(),
+                    null,
+                    "ghcr.io/paddykim/platform-api",
+                    "day25-test",
+                    "sha256:test",
+                    "ghcr.io/paddykim/platform-api:day25-test",
                     java.time.Instant.parse("2026-06-23T00:00:00Z"),
                     java.time.Instant.parse("2026-06-23T00:00:01Z"),
                     java.time.Instant.parse("2026-06-23T00:00:00Z")
@@ -490,7 +601,8 @@ class SourceRepositoryControllerTests {
         }
 
         void reset() {
-            lastRequest = null;
+            lastBuildRequest = null;
+            lastDeployRequest = null;
             nextFailureMessage = null;
         }
 

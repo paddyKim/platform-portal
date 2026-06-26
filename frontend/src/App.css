@@ -774,7 +774,7 @@ h4 {
 
 .execution-detail-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -935,6 +935,25 @@ h4 {
 .build-profile-form {
   display: grid;
   gap: 14px;
+}
+
+.profile-target-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe3e8;
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.profile-target-panel > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.profile-target-panel strong {
+  color: #0f6b74;
+  overflow-wrap: anywhere;
 }
 
 .build-profile-form label {

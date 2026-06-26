@@ -8,6 +8,9 @@ public record BuildProfileRequest(
         @NotNull BuildProfileCiTool ciTool,
         @NotBlank String workingDirectory,
         @NotBlank String script,
-        String description
+        String description,
+        @NotNull Long targetApplicationId,
+        @NotNull Long targetEnvironmentId,
+        @NotNull Long targetComponentId
 ) {
 }

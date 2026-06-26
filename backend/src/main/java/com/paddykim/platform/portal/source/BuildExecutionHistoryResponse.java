@@ -24,6 +24,14 @@ public record BuildExecutionHistoryResponse(
         String logSummary,
         String externalRunId,
         String externalRunUrl,
+        String imageRepository,
+        String imageTag,
+        String imageDigest,
+        String imageReference,
+        String manifestUpdateStatus,
+        String manifestUpdateMessage,
+        String manifestChangedFilePath,
+        Instant manifestUpdatedAt,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -51,6 +59,14 @@ public record BuildExecutionHistoryResponse(
                 history.getLogSummary(),
                 history.getExternalRunId(),
                 history.getExternalRunUrl(),
+                history.getImageRepository(),
+                history.getImageTag(),
+                history.getImageDigest(),
+                history.getImageReference(),
+                history.getManifestUpdateStatus(),
+                history.getManifestUpdateMessage(),
+                history.getManifestChangedFilePath(),
+                history.getManifestUpdatedAt(),
                 history.getCreatedAt(),
                 history.getUpdatedAt()
         );

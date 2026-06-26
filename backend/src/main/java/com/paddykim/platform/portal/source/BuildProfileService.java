@@ -1,5 +1,9 @@
 package com.paddykim.platform.portal.source;
 
+import com.paddykim.platform.portal.catalog.Application;
+import com.paddykim.platform.portal.catalog.ApplicationComponent;
+import com.paddykim.platform.portal.catalog.ApplicationEnvironment;
+import com.paddykim.platform.portal.catalog.ApplicationRepository;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -16,19 +20,22 @@ public class BuildProfileService {
     private final PlatformCicdExecutionClient platformCicdExecutionClient;
     private final SourceRepositoryCredentialService credentialService;
     private final BuildExecutionHistoryRepository buildExecutionHistoryRepository;
+    private final ApplicationRepository applicationRepository;
 
     public BuildProfileService(
             SourceRepositoryRepository sourceRepositoryRepository,
             BuildProfileRepository buildProfileRepository,
             PlatformCicdExecutionClient platformCicdExecutionClient,
             SourceRepositoryCredentialService credentialService,
-            BuildExecutionHistoryRepository buildExecutionHistoryRepository
+            BuildExecutionHistoryRepository buildExecutionHistoryRepository,
+            ApplicationRepository applicationRepository
     ) {
         this.sourceRepositoryRepository = sourceRepositoryRepository;
         this.buildProfileRepository = buildProfileRepository;
         this.platformCicdExecutionClient = platformCicdExecutionClient;
         this.credentialService = credentialService;
         this.buildExecutionHistoryRepository = buildExecutionHistoryRepository;
+        this.applicationRepository = applicationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -51,6 +58,7 @@ public class BuildProfileService {
         SourceRepository sourceRepository = sourceRepositoryRepository.findById(sourceRepositoryId)
                 .orElseThrow(() -> new SourceRepositoryNotFoundException(sourceRepositoryId));
         BuildProfileValues values = validate(request);
+        BuildProfileTarget target = resolveTarget(request);
 
         BuildProfile buildProfile = buildProfileRepository.save(new BuildProfile(
                 sourceRepository,
@@ -58,7 +66,8 @@ public class BuildProfileService {
                 request.ciTool(),
                 values.workingDirectory(),
                 values.script(),
-                values.description()
+                values.description(),
+                target
         ));
 
         return BuildProfileResponse.from(buildProfile);
@@ -72,13 +81,15 @@ public class BuildProfileService {
     ) {
         BuildProfile buildProfile = findBuildProfile(sourceRepositoryId, buildProfileId);
         BuildProfileValues values = validate(request);
+        BuildProfileTarget target = resolveTarget(request);
 
         buildProfile.update(
                 values.name(),
                 request.ciTool(),
                 values.workingDirectory(),
                 values.script(),
-                values.description()
+                values.description(),
+                target
         );
 
         return BuildProfileResponse.from(buildProfile);
@@ -114,19 +125,22 @@ public class BuildProfileService {
         BuildProfile buildProfile = findBuildProfile(sourceRepositoryId, buildProfileId);
         SourceRepository sourceRepository = buildProfile.getSourceRepository();
         String requestedBy = request.requestedBy().trim();
-        String imageTag = request.imageTag().trim();
+        String requestedValue = textOrDefault(request.imageTag(), "artifact-output");
         String branch = textOrDefault(request.branch(), "main");
         String credential = credentialService.decryptFromStorage(sourceRepository.getAccessToken());
         Long portalRequestId = Instant.now().toEpochMilli();
+        String applicationName = textOrDefault(buildProfile.getTargetApplicationName(), sourceRepository.getName());
+        String environment = textOrDefault(buildProfile.getTargetEnvironment(), "dev");
+        String componentName = textOrDefault(buildProfile.getTargetComponentName(), sourceRepository.getName());
         PlatformCicdExecutionResponse execution;
         try {
             execution = platformCicdExecutionClient.createExecution(new PlatformCicdExecutionCreateRequest(
                     portalRequestId,
-                    textOrDefault(request.applicationName(), sourceRepository.getName()),
-                    textOrDefault(request.environment(), "dev"),
-                    textOrDefault(request.componentName(), sourceRepository.getName()),
+                    applicationName,
+                    environment,
+                    componentName,
                     "BUILD_IMAGE",
-                    imageTag,
+                    requestedValue,
                     requestedBy,
                     sourceRepositoryId,
                     buildProfileId,
@@ -145,7 +159,7 @@ public class BuildProfileService {
                     portalRequestId,
                     branch,
                     requestedBy,
-                    imageTag,
+                    requestedValue,
                     exception.getMessage()
             );
 
@@ -159,7 +173,7 @@ public class BuildProfileService {
                     buildProfile.getCiTool(),
                     buildProfile.getWorkingDirectory(),
                     requestedBy,
-                    imageTag,
+                    requestedValue,
                     branch,
                     "platform-cicd-http",
                     portalRequestId,
@@ -167,7 +181,9 @@ public class BuildProfileService {
             );
         }
 
-        BuildExecutionHistory history = saveHistory(sourceRepository, buildProfile, branch, requestedBy, imageTag, execution);
+        BuildExecutionHistory history = saveHistory(sourceRepository, buildProfile, branch, requestedBy, requestedValue, execution);
+        // Manifest update is deferred until application manifest ownership is modeled explicitly.
+        // recordManifestUpdate(history, buildProfile, requestedBy);
         Instant now = Instant.now();
         if ("SUCCEEDED".equalsIgnoreCase(execution.cloneStatus())) {
             sourceRepository.markCloned(now);
@@ -185,12 +201,74 @@ public class BuildProfileService {
                 buildProfile.getCiTool(),
                 buildProfile.getWorkingDirectory(),
                 requestedBy,
-                imageTag,
+                requestedValue,
                 branch,
                 "platform-cicd-http",
                 history.getId(),
-                execution
+                execution,
+                history
         );
+    }
+
+    private void recordManifestUpdate(
+            BuildExecutionHistory history,
+            BuildProfile buildProfile,
+            String requestedBy
+    ) {
+        if (!"SUCCEEDED".equalsIgnoreCase(history.getStatus())) {
+            return;
+        }
+        if (buildProfile.getTargetComponentId() == null) {
+            history.recordManifestUpdate("FAILED", "Build profile target is not configured", null, Instant.now());
+            return;
+        }
+        if (history.getImageRepository() == null || history.getImageTag() == null || history.getImageReference() == null) {
+            history.recordManifestUpdate("FAILED", "Build artifact image output is missing", null, Instant.now());
+            return;
+        }
+        if (!history.getImageRepository().equals(buildProfile.getTargetImageRepository())) {
+            history.recordManifestUpdate(
+                    "FAILED",
+                    "Artifact imageRepository does not match target component imageRepository: %s != %s".formatted(
+                            history.getImageRepository(),
+                            buildProfile.getTargetImageRepository()
+                    ),
+                    null,
+                    Instant.now()
+            );
+            return;
+        }
+
+        try {
+            PlatformCicdExecutionResponse deployExecution = platformCicdExecutionClient.createExecution(
+                    new PlatformCicdExecutionCreateRequest(
+                            Instant.now().toEpochMilli(),
+                            buildProfile.getTargetApplicationName(),
+                            buildProfile.getTargetEnvironment(),
+                            buildProfile.getTargetComponentName(),
+                            "DEPLOY_IMAGE",
+                            history.getImageTag(),
+                            requestedBy,
+                            history.getSourceRepository().getId(),
+                            buildProfile.getId(),
+                            buildProfile.getCiTool().name(),
+                            history.getSourceRepository().getRepositoryUrl(),
+                            history.getBranch(),
+                            history.getSourceRepository().getAccountName(),
+                            null,
+                            buildProfile.getWorkingDirectory(),
+                            null
+                    )
+            );
+            history.recordManifestUpdate(
+                    nullToDefault(deployExecution.status(), "UNKNOWN"),
+                    deployExecution.statusMessage(),
+                    deployExecution.changedFilePath(),
+                    deployExecution.finishedAt() == null ? Instant.now() : deployExecution.finishedAt()
+            );
+        } catch (SourceRepositoryValidationException exception) {
+            history.recordManifestUpdate("FAILED", exception.getMessage(), null, Instant.now());
+        }
     }
 
     private BuildExecutionHistory saveHistory(
@@ -220,7 +298,11 @@ public class BuildProfileService {
                 execution.exitCode(),
                 execution.logSummary(),
                 null,
-                null
+                null,
+                execution.imageRepository(),
+                execution.imageTag(),
+                execution.imageDigest(),
+                execution.imageReference()
         ));
     }
 
@@ -252,6 +334,10 @@ public class BuildProfileService {
                 null,
                 "",
                 null,
+                null,
+                null,
+                null,
+                null,
                 null
         ));
     }
@@ -267,6 +353,39 @@ public class BuildProfileService {
         if (!sourceRepositoryRepository.existsById(sourceRepositoryId)) {
             throw new SourceRepositoryNotFoundException(sourceRepositoryId);
         }
+    }
+
+    private BuildProfileTarget resolveTarget(BuildProfileRequest request) {
+        Application application = applicationRepository.findWithEnvironmentsById(request.targetApplicationId())
+                .orElseThrow(() -> new SourceRepositoryValidationException(
+                        "Target application not found: " + request.targetApplicationId()
+                ));
+
+        ApplicationEnvironment environment = application.getEnvironments().stream()
+                .filter(candidate -> candidate.getId().equals(request.targetEnvironmentId()))
+                .findFirst()
+                .orElseThrow(() -> new SourceRepositoryValidationException(
+                        "Target environment does not belong to application: " + request.targetEnvironmentId()
+                ));
+
+        ApplicationComponent component = environment.getComponents().stream()
+                .filter(candidate -> candidate.getId().equals(request.targetComponentId()))
+                .findFirst()
+                .orElseThrow(() -> new SourceRepositoryValidationException(
+                        "Target component does not belong to environment: " + request.targetComponentId()
+                ));
+
+        return new BuildProfileTarget(
+                application.getId(),
+                environment.getId(),
+                component.getId(),
+                application.getName(),
+                environment.getEnvironment(),
+                component.getName(),
+                component.getImageRepository(),
+                environment.getHelmValuesPath(),
+                environment.getArgocdApplicationName()
+        );
     }
 
     private static BuildProfileValues validate(BuildProfileRequest request) {

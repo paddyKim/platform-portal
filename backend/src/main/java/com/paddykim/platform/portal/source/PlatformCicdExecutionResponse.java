@@ -13,6 +13,11 @@ public record PlatformCicdExecutionResponse(
         String checkoutPath,
         Integer exitCode,
         String logSummary,
+        String changedFilePath,
+        String imageRepository,
+        String imageTag,
+        String imageDigest,
+        String imageReference,
         Instant startedAt,
         Instant finishedAt,
         Instant createdAt

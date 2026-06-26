@@ -81,6 +81,30 @@ public class BuildExecutionHistory {
     @Column(name = "external_run_url", columnDefinition = "TEXT")
     private String externalRunUrl;
 
+    @Column(name = "image_repository")
+    private String imageRepository;
+
+    @Column(name = "image_tag")
+    private String imageTag;
+
+    @Column(name = "image_digest")
+    private String imageDigest;
+
+    @Column(name = "image_reference")
+    private String imageReference;
+
+    @Column(name = "manifest_update_status")
+    private String manifestUpdateStatus;
+
+    @Column(name = "manifest_update_message", columnDefinition = "TEXT")
+    private String manifestUpdateMessage;
+
+    @Column(name = "manifest_changed_file_path", columnDefinition = "TEXT")
+    private String manifestChangedFilePath;
+
+    @Column(name = "manifest_updated_at")
+    private Instant manifestUpdatedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -109,7 +133,11 @@ public class BuildExecutionHistory {
             Integer exitCode,
             String logSummary,
             String externalRunId,
-            String externalRunUrl
+            String externalRunUrl,
+            String imageRepository,
+            String imageTag,
+            String imageDigest,
+            String imageReference
     ) {
         this.sourceRepository = sourceRepository;
         this.buildProfile = buildProfile;
@@ -130,8 +158,20 @@ public class BuildExecutionHistory {
         this.logSummary = logSummary;
         this.externalRunId = externalRunId;
         this.externalRunUrl = externalRunUrl;
+        this.imageRepository = imageRepository;
+        this.imageTag = imageTag;
+        this.imageDigest = imageDigest;
+        this.imageReference = imageReference;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
+    }
+
+    public void recordManifestUpdate(String status, String message, String changedFilePath, Instant updatedAt) {
+        this.manifestUpdateStatus = status;
+        this.manifestUpdateMessage = message;
+        this.manifestChangedFilePath = changedFilePath;
+        this.manifestUpdatedAt = updatedAt;
+        this.updatedAt = Instant.now();
     }
 
     public Long getId() {
@@ -212,6 +252,38 @@ public class BuildExecutionHistory {
 
     public String getExternalRunUrl() {
         return externalRunUrl;
+    }
+
+    public String getImageRepository() {
+        return imageRepository;
+    }
+
+    public String getImageTag() {
+        return imageTag;
+    }
+
+    public String getImageDigest() {
+        return imageDigest;
+    }
+
+    public String getImageReference() {
+        return imageReference;
+    }
+
+    public String getManifestUpdateStatus() {
+        return manifestUpdateStatus;
+    }
+
+    public String getManifestUpdateMessage() {
+        return manifestUpdateMessage;
+    }
+
+    public String getManifestChangedFilePath() {
+        return manifestChangedFilePath;
+    }
+
+    public Instant getManifestUpdatedAt() {
+        return manifestUpdatedAt;
     }
 
     public Instant getCreatedAt() {

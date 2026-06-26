@@ -41,6 +41,33 @@ public class BuildProfile {
     @Column(nullable = false)
     private String description;
 
+    @Column(name = "target_application_id")
+    private Long targetApplicationId;
+
+    @Column(name = "target_environment_id")
+    private Long targetEnvironmentId;
+
+    @Column(name = "target_component_id")
+    private Long targetComponentId;
+
+    @Column(name = "target_application_name")
+    private String targetApplicationName;
+
+    @Column(name = "target_environment")
+    private String targetEnvironment;
+
+    @Column(name = "target_component_name")
+    private String targetComponentName;
+
+    @Column(name = "target_image_repository")
+    private String targetImageRepository;
+
+    @Column(name = "target_helm_values_path")
+    private String targetHelmValuesPath;
+
+    @Column(name = "target_argocd_application_name")
+    private String targetArgocdApplicationName;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -56,7 +83,8 @@ public class BuildProfile {
             BuildProfileCiTool ciTool,
             String workingDirectory,
             String script,
-            String description
+            String description,
+            BuildProfileTarget target
     ) {
         this.sourceRepository = sourceRepository;
         this.name = name;
@@ -64,8 +92,37 @@ public class BuildProfile {
         this.workingDirectory = workingDirectory;
         this.script = script;
         this.description = description;
+        applyTarget(target);
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
+    }
+
+    public BuildProfile(
+            SourceRepository sourceRepository,
+            String name,
+            BuildProfileCiTool ciTool,
+            String workingDirectory,
+            String script,
+            String description
+    ) {
+        this(sourceRepository, name, ciTool, workingDirectory, script, description, null);
+    }
+
+    public void update(
+            String name,
+            BuildProfileCiTool ciTool,
+            String workingDirectory,
+            String script,
+            String description,
+            BuildProfileTarget target
+    ) {
+        this.name = name;
+        this.ciTool = ciTool;
+        this.workingDirectory = workingDirectory;
+        this.script = script;
+        this.description = description;
+        applyTarget(target);
+        this.updatedAt = Instant.now();
     }
 
     public void update(
@@ -75,12 +132,23 @@ public class BuildProfile {
             String script,
             String description
     ) {
-        this.name = name;
-        this.ciTool = ciTool;
-        this.workingDirectory = workingDirectory;
-        this.script = script;
-        this.description = description;
-        this.updatedAt = Instant.now();
+        update(name, ciTool, workingDirectory, script, description, null);
+    }
+
+    private void applyTarget(BuildProfileTarget target) {
+        if (target == null) {
+            return;
+        }
+
+        this.targetApplicationId = target.applicationId();
+        this.targetEnvironmentId = target.environmentId();
+        this.targetComponentId = target.componentId();
+        this.targetApplicationName = target.applicationName();
+        this.targetEnvironment = target.environment();
+        this.targetComponentName = target.componentName();
+        this.targetImageRepository = target.imageRepository();
+        this.targetHelmValuesPath = target.helmValuesPath();
+        this.targetArgocdApplicationName = target.argocdApplicationName();
     }
 
     public Long getId() {
@@ -109,6 +177,42 @@ public class BuildProfile {
 
     public String getDescription() {
         return description;
+    }
+
+    public Long getTargetApplicationId() {
+        return targetApplicationId;
+    }
+
+    public Long getTargetEnvironmentId() {
+        return targetEnvironmentId;
+    }
+
+    public Long getTargetComponentId() {
+        return targetComponentId;
+    }
+
+    public String getTargetApplicationName() {
+        return targetApplicationName;
+    }
+
+    public String getTargetEnvironment() {
+        return targetEnvironment;
+    }
+
+    public String getTargetComponentName() {
+        return targetComponentName;
+    }
+
+    public String getTargetImageRepository() {
+        return targetImageRepository;
+    }
+
+    public String getTargetHelmValuesPath() {
+        return targetHelmValuesPath;
+    }
+
+    public String getTargetArgocdApplicationName() {
+        return targetArgocdApplicationName;
     }
 
     public Instant getCreatedAt() {

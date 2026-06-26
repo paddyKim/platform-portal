@@ -10,7 +10,17 @@ const BUILD_PROFILE_TEMPLATES = {
 set -euo pipefail
 
 ./gradlew test
-docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
+docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend
+docker push ghcr.io/paddykim/platform-api:\${IMAGE_TAG}
+
+mkdir -p .platform
+cat > .platform/build-output.json <<JSON
+{
+  "imageRepository": "ghcr.io/paddykim/platform-api",
+  "imageTag": "\${IMAGE_TAG}",
+  "imageReference": "ghcr.io/paddykim/platform-api:\${IMAGE_TAG}"
+}
+JSON`,
   },
   JENKINS: {
     workingDirectory: '.',
@@ -25,6 +35,7 @@ docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
     stage('Build image') {
       steps {
         sh 'docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend'
+        sh 'docker push ghcr.io/paddykim/platform-api:\${IMAGE_TAG}'
       }
     }
   }
@@ -41,7 +52,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./gradlew test
-      - run: docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
+      - run: docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend
+      - run: docker push ghcr.io/paddykim/platform-api:\${IMAGE_TAG}`,
   },
   GITLAB_CI: {
     workingDirectory: '.',
@@ -57,7 +69,8 @@ test:
 build:
   stage: build
   script:
-    - docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend`,
+    - docker build -t ghcr.io/paddykim/platform-api:\${IMAGE_TAG} backend
+    - docker push ghcr.io/paddykim/platform-api:\${IMAGE_TAG}`,
   },
 }
 
@@ -189,8 +202,11 @@ function App() {
     script: BUILD_PROFILE_TEMPLATES.SHELL.script,
     description: '',
     requestedBy: 'platform-operator',
-    imageTag: 'day21-test',
+    imageTag: '',
     branch: 'main',
+    targetApplicationId: '',
+    targetEnvironmentId: '',
+    targetComponentId: '',
   })
   const [editingBuildProfileId, setEditingBuildProfileId] = useState(null)
   const [catalogState, setCatalogState] = useState('loading')
@@ -477,6 +493,31 @@ function App() {
 
   useEffect(() => {
     if (!applicationDetail) {
+      return
+    }
+
+    setBuildProfileForm((current) => {
+      const applicationId = String(applicationDetail.id)
+      const environments = applicationDetail.environments || []
+      const selectedEnvironment = environments.find(
+        (environment) => String(environment.id) === String(current.targetEnvironmentId),
+      ) || environments[0]
+      const components = selectedEnvironment?.components || []
+      const selectedComponent = components.find(
+        (component) => String(component.id) === String(current.targetComponentId),
+      ) || components[0]
+
+      return {
+        ...current,
+        targetApplicationId: current.targetApplicationId || applicationId,
+        targetEnvironmentId: selectedEnvironment ? String(selectedEnvironment.id) : '',
+        targetComponentId: selectedComponent ? String(selectedComponent.id) : '',
+      }
+    })
+  }, [applicationDetail])
+
+  useEffect(() => {
+    if (!applicationDetail) {
       setRuntimeStatuses({})
       setRuntimeState('idle')
       return
@@ -597,8 +638,15 @@ function App() {
       script: BUILD_PROFILE_TEMPLATES.SHELL.script,
       description: '',
       requestedBy: 'platform-operator',
-      imageTag: 'day21-test',
+      imageTag: '',
       branch: 'main',
+      targetApplicationId: applicationDetail ? String(applicationDetail.id) : '',
+      targetEnvironmentId: applicationDetail?.environments?.[0]?.id
+        ? String(applicationDetail.environments[0].id)
+        : '',
+      targetComponentId: applicationDetail?.environments?.[0]?.components?.[0]?.id
+        ? String(applicationDetail.environments[0].components[0].id)
+        : '',
     })
   }
 
@@ -615,6 +663,9 @@ function App() {
   function handleEditBuildProfile(profile) {
     setEditingBuildProfileId(profile.id)
     setSelectedBuildProfileId(profile.id)
+    if (profile.targetApplicationId) {
+      setSelectedApplicationId(profile.targetApplicationId)
+    }
     setBuildProfileForm((current) => ({
       ...current,
       name: profile.name,
@@ -622,6 +673,9 @@ function App() {
       workingDirectory: profile.workingDirectory,
       script: profile.script,
       description: profile.description,
+      targetApplicationId: profile.targetApplicationId ? String(profile.targetApplicationId) : '',
+      targetEnvironmentId: profile.targetEnvironmentId ? String(profile.targetEnvironmentId) : '',
+      targetComponentId: profile.targetComponentId ? String(profile.targetComponentId) : '',
     }))
   }
 
@@ -725,6 +779,9 @@ function App() {
           workingDirectory: buildProfileForm.workingDirectory,
           script: buildProfileForm.script,
           description: buildProfileForm.description,
+          targetApplicationId: Number(buildProfileForm.targetApplicationId),
+          targetEnvironmentId: Number(buildProfileForm.targetEnvironmentId),
+          targetComponentId: Number(buildProfileForm.targetComponentId),
         }),
       })
       await reloadBuildProfiles(selectedSourceRepositoryId)
@@ -785,8 +842,6 @@ function App() {
     setLastBuildExecution(null)
 
     try {
-      const environment = applicationDetail?.environments?.[0]
-      const component = environment?.components?.[0]
       const result = await fetchJson(
         `/api/source-repositories/${selectedSourceRepositoryId}/build-profiles/${profile.id}/run`,
         {
@@ -796,11 +851,7 @@ function App() {
           },
           body: JSON.stringify({
             requestedBy: buildProfileForm.requestedBy,
-            imageTag: buildProfileForm.imageTag,
             branch: buildProfileForm.branch,
-            applicationName: applicationDetail?.name || selectedSourceRepository?.name,
-            environment: environment?.environment || 'dev',
-            componentName: component?.name || selectedSourceRepository?.name,
           }),
         },
       )
@@ -882,6 +933,10 @@ function App() {
             setSourceRepositoryView,
             selectedSourceRepository,
             setSelectedSourceRepositoryId,
+            applications,
+            applicationDetail,
+            selectedApplicationId,
+            setSelectedApplicationId,
             sourceRepositoryForm,
             setSourceRepositoryForm,
             handleCreateSourceRepository,
@@ -1042,6 +1097,10 @@ function renderSourceRepositoryPanel(
   setSourceRepositoryView,
   selectedSourceRepository,
   setSelectedSourceRepositoryId,
+  applications,
+  applicationDetail,
+  selectedApplicationId,
+  setSelectedApplicationId,
   sourceRepositoryForm,
   setSourceRepositoryForm,
   handleCreateSourceRepository,
@@ -1072,6 +1131,14 @@ function renderSourceRepositoryPanel(
   const tokenLabel = isGitLab ? 'GitLab password / access token' : 'GitHub password / access token'
   const isRegisterView = sourceRepositoryView === 'register'
   const isDetailView = sourceRepositoryView === 'detail'
+  const targetEnvironments = applicationDetail?.environments || []
+  const selectedTargetEnvironment = targetEnvironments.find(
+    (environment) => String(environment.id) === String(buildProfileForm.targetEnvironmentId),
+  )
+  const targetComponents = selectedTargetEnvironment?.components || []
+  const selectedTargetComponent = targetComponents.find(
+    (component) => String(component.id) === String(buildProfileForm.targetComponentId),
+  )
 
   return (
     <section className="source-repository-panel">
@@ -1245,6 +1312,7 @@ function renderSourceRepositoryPanel(
                           <small>{profile.workingDirectory}</small>
                         </div>
                         <span className="status-value neutral">{profile.ciTool}</span>
+                        <small>{profile.targetApplicationName || 'No target'} / {profile.targetComponentName || 'No component'}</small>
                         <p>{profile.description}</p>
                         <code>{profile.script.split('\n')[0]}</code>
                         <div className="profile-actions">
@@ -1335,6 +1403,86 @@ function renderSourceRepositoryPanel(
                         </label>
                       </div>
 
+                      <div className="profile-target-panel">
+                        <div>
+                          <p className="eyebrow">Manifest Target</p>
+                          <strong>
+                            {selectedTargetComponent
+                              ? selectedTargetComponent.imageRepository
+                              : 'Select target component'}
+                          </strong>
+                        </div>
+
+                        <div className="profile-form-grid">
+                          <label>
+                            <span>Application</span>
+                            <select
+                              onChange={(event) => {
+                                setSelectedApplicationId(Number(event.target.value))
+                                setBuildProfileForm((current) => ({
+                                  ...current,
+                                  targetApplicationId: event.target.value,
+                                  targetEnvironmentId: '',
+                                  targetComponentId: '',
+                                }))
+                              }}
+                              required
+                              value={buildProfileForm.targetApplicationId || selectedApplicationId || ''}
+                            >
+                              {applications.map((application) => (
+                                <option key={application.id} value={application.id}>
+                                  {application.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            <span>Environment</span>
+                            <select
+                              onChange={(event) => {
+                                const environment = targetEnvironments.find(
+                                  (candidate) => String(candidate.id) === event.target.value,
+                                )
+                                setBuildProfileForm((current) => ({
+                                  ...current,
+                                  targetEnvironmentId: event.target.value,
+                                  targetComponentId: environment?.components?.[0]?.id
+                                    ? String(environment.components[0].id)
+                                    : '',
+                                }))
+                              }}
+                              required
+                              value={buildProfileForm.targetEnvironmentId}
+                            >
+                              {targetEnvironments.map((environment) => (
+                                <option key={environment.id} value={environment.id}>
+                                  {environment.environment}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label>
+                            <span>Component</span>
+                            <select
+                              onChange={(event) => setBuildProfileForm((current) => ({
+                                ...current,
+                                targetComponentId: event.target.value,
+                              }))}
+                              required
+                              value={buildProfileForm.targetComponentId}
+                            >
+                              {targetComponents.map((component) => (
+                                <option key={component.id} value={component.id}>
+                                  {component.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+
                       <label className="script-editor">
                         <span>Build script</span>
                         <textarea
@@ -1384,6 +1532,13 @@ function renderSourceRepositoryPanel(
                   <span>Selected profile</span>
                   <strong>{selectedBuildProfile.name}</strong>
                   <small>{selectedBuildProfile.ciTool} / {selectedBuildProfile.workingDirectory}</small>
+                  <small>
+                    {selectedBuildProfile.targetApplicationName || 'No target'}
+                    {' / '}
+                    {selectedBuildProfile.targetEnvironment || 'No environment'}
+                    {' / '}
+                    {selectedBuildProfile.targetComponentName || 'No component'}
+                  </small>
                 </div>
 
                 {renderPipelinePreview(selectedBuildProfile.ciTool, 'compact')}
@@ -1399,18 +1554,6 @@ function renderSourceRepositoryPanel(
                       required
                       type="text"
                       value={buildProfileForm.requestedBy}
-                    />
-                  </label>
-                  <label>
-                    <span>Image tag</span>
-                    <input
-                      onChange={(event) => setBuildProfileForm((current) => ({
-                        ...current,
-                        imageTag: event.target.value,
-                      }))}
-                      required
-                      type="text"
-                      value={buildProfileForm.imageTag}
                     />
                   </label>
                   <label>
@@ -1453,6 +1596,14 @@ function renderSourceRepositoryPanel(
                       <div>
                         <dt>Profile</dt>
                         <dd>{lastBuildExecution.buildProfileName || selectedBuildProfile.name}</dd>
+                      </div>
+                      <div>
+                        <dt>Image</dt>
+                        <dd>{lastBuildExecution.imageReference || lastBuildExecution.imageTag || 'None'}</dd>
+                      </div>
+                      <div>
+                        <dt>Manifest</dt>
+                        <dd>{lastBuildExecution.manifestUpdateStatus || 'Not requested'}</dd>
                       </div>
                       <div>
                         <dt>Finished</dt>
@@ -1506,10 +1657,10 @@ function renderBuildExecutionHistory(
             <span role="columnheader">Status</span>
             <span role="columnheader">Runner</span>
             <span role="columnheader">Branch</span>
-            <span role="columnheader">Value</span>
+            <span role="columnheader">Image</span>
+            <span role="columnheader">Manifest</span>
             <span role="columnheader">Requested by</span>
             <span role="columnheader">Finished</span>
-            <span role="columnheader">Exit</span>
           </div>
 
           {buildExecutions.map((execution) => (
@@ -1527,10 +1678,10 @@ function renderBuildExecutionHistory(
               <span role="cell" className={`status-value ${statusTone(execution.status)}`}>{execution.status}</span>
               <span role="cell">{execution.runnerType}</span>
               <span role="cell">{execution.branch}</span>
-              <span role="cell">{execution.requestedValue}</span>
+              <span role="cell">{execution.imageReference || execution.imageTag || 'None'}</span>
+              <span role="cell">{execution.manifestUpdateStatus || 'None'}</span>
               <span role="cell">{execution.requestedBy}</span>
               <span role="cell">{formatDateTime(execution.finishedAt || execution.createdAt)}</span>
-              <span role="cell">{execution.exitCode ?? 'None'}</span>
             </button>
           ))}
         </div>
@@ -1544,7 +1695,7 @@ function renderBuildExecutionHistory(
               <dl>
                 <div><dt>Runner</dt><dd>{selectedBuildExecution.runnerType}</dd></div>
                 <div><dt>Branch</dt><dd>{selectedBuildExecution.branch}</dd></div>
-                <div><dt>Value</dt><dd>{selectedBuildExecution.requestedValue}</dd></div>
+                <div><dt>Requested value</dt><dd>{selectedBuildExecution.requestedValue}</dd></div>
                 <div><dt>Requested by</dt><dd>{selectedBuildExecution.requestedBy}</dd></div>
                 <div><dt>External execution</dt><dd>{selectedBuildExecution.externalExecutionId ?? 'None'}</dd></div>
               </dl>
@@ -1556,6 +1707,26 @@ function renderBuildExecutionHistory(
                 <div><dt>Status</dt><dd>{selectedBuildExecution.cloneStatus || 'None'}</dd></div>
                 <div><dt>Message</dt><dd>{selectedBuildExecution.cloneMessage || 'None'}</dd></div>
                 <div><dt>Checkout</dt><dd>{selectedBuildExecution.checkoutPath || 'None'}</dd></div>
+              </dl>
+            </div>
+
+            <div>
+              <p className="eyebrow">Image Artifact</p>
+              <dl>
+                <div><dt>Repository</dt><dd>{selectedBuildExecution.imageRepository || 'None'}</dd></div>
+                <div><dt>Tag</dt><dd>{selectedBuildExecution.imageTag || 'None'}</dd></div>
+                <div><dt>Digest</dt><dd>{selectedBuildExecution.imageDigest || 'None'}</dd></div>
+                <div><dt>Reference</dt><dd>{selectedBuildExecution.imageReference || 'None'}</dd></div>
+              </dl>
+            </div>
+
+            <div>
+              <p className="eyebrow">Manifest Update</p>
+              <dl>
+                <div><dt>Status</dt><dd>{selectedBuildExecution.manifestUpdateStatus || 'None'}</dd></div>
+                <div><dt>Message</dt><dd>{selectedBuildExecution.manifestUpdateMessage || 'None'}</dd></div>
+                <div><dt>Changed file</dt><dd>{selectedBuildExecution.manifestChangedFilePath || 'None'}</dd></div>
+                <div><dt>Updated</dt><dd>{formatDateTime(selectedBuildExecution.manifestUpdatedAt)}</dd></div>
               </dl>
             </div>
 
