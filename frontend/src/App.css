@@ -1211,11 +1211,31 @@ h4 {
 
 .argocd-application-card {
   display: grid;
+  width: 100%;
   gap: 18px;
   padding: 18px;
   border: 1px solid #dbe3e8;
   border-radius: 8px;
   background: #ffffff;
+  color: #172026;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.argocd-application-card:hover,
+.argocd-application-card.active {
+  border-color: #0f6b74;
+  background: #f3fafb;
+}
+
+.argocd-application-card.active {
+  box-shadow: inset 3px 0 0 #0f6b74;
+}
+
+.argocd-application-card.compact {
+  gap: 12px;
+  padding: 14px;
 }
 
 .argocd-application-main,
@@ -1249,6 +1269,187 @@ h4 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.argocd-application-card.compact .argocd-application-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.argocd-detail-layout {
+  grid-template-columns: minmax(280px, 0.34fr) minmax(0, 1fr);
+}
+
+.argocd-detail-sidebar,
+.argocd-detail-panel {
+  min-height: 0;
+}
+
+.argocd-detail-content {
+  display: grid;
+  gap: 16px;
+}
+
+.argocd-detail-header,
+.argocd-section-heading,
+.argocd-detail-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.argocd-detail-header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid #dbe3e8;
+}
+
+.argocd-detail-header p {
+  margin-bottom: 0;
+  color: #60737d;
+}
+
+.argocd-detail-actions {
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.argocd-detail-actions button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid #0f6b74;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f6b74;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.argocd-detail-actions button.primary-action {
+  background: #0f6b74;
+  color: #ffffff;
+}
+
+.argocd-detail-actions button:disabled {
+  border-color: #b8c5cc;
+  background: #dbe3e8;
+  color: #60737d;
+  cursor: not-allowed;
+}
+
+.argocd-detail-section {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid #dbe3e8;
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.argocd-section-heading {
+  align-items: center;
+}
+
+.argocd-section-heading > span {
+  color: #60737d;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.argocd-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.argocd-operation-message {
+  margin-bottom: 0;
+  padding: 10px 12px;
+  border-left: 3px solid #0f6b74;
+  background: #ffffff;
+  color: #526772;
+  line-height: 1.45;
+}
+
+.argocd-detail-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.argocd-fact-list {
+  display: grid;
+  gap: 10px;
+}
+
+.argocd-resource-table {
+  display: grid;
+  overflow-x: auto;
+  border: 1px solid #dbe3e8;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.argocd-resource-row {
+  display: grid;
+  grid-template-columns: 0.75fr minmax(160px, 1.25fr) 1fr 0.8fr 0.8fr 0.8fr;
+  min-width: 840px;
+  align-items: center;
+  border-top: 1px solid #e1e7eb;
+}
+
+.argocd-resource-row:first-child {
+  border-top: 0;
+}
+
+.argocd-resource-row > span,
+.argocd-resource-row > strong {
+  padding: 11px;
+  color: #24333b;
+  overflow-wrap: anywhere;
+}
+
+.argocd-resource-head span {
+  background: #eef3f5;
+  color: #60737d;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.argocd-condition-list {
+  display: grid;
+  gap: 10px;
+}
+
+.argocd-condition-list article {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e5b2a8;
+  border-radius: 8px;
+  background: #fff6f4;
+}
+
+.argocd-condition-list article div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.argocd-condition-list time {
+  color: #60737d;
+  font-size: 0.78rem;
+}
+
+.argocd-condition-list p {
+  margin-bottom: 0;
+  color: #8a2f1d;
+  line-height: 1.45;
 }
 
 .argocd-create-grid {
@@ -1666,8 +1867,10 @@ h4 {
   .metadata-grid,
   .metadata-grid.compact,
   .status-grid,
+  .argocd-status-grid,
   .argocd-application-grid,
   .argocd-create-grid,
+  .argocd-detail-columns,
   .source-repo-form,
   .source-repository-card,
   .execution-detail-grid,
@@ -1716,6 +1919,8 @@ h4 {
   .detail-header,
   .environment-heading,
   .argocd-application-main,
+  .argocd-detail-header,
+  .argocd-detail-actions,
   .status-heading,
   .application-item,
   .portal-nav,
@@ -1733,8 +1938,11 @@ h4 {
   .metadata-grid,
   .metadata-grid.compact,
   .status-grid,
+  .argocd-status-grid,
   .argocd-application-grid,
+  .argocd-application-card.compact .argocd-application-grid,
   .argocd-create-grid,
+  .argocd-detail-columns,
   .source-repo-form,
   .source-repository-card,
   .execution-detail-grid,

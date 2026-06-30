@@ -19,4 +19,15 @@ public class ArgoCdApplicationCatalogService {
     public ArgoCdApplicationSummary createApplication(ArgoCdApplicationCreateRequest request) {
         return argoCdApplicationCatalogClient.createApplication(request);
     }
+
+    public ArgoCdApplicationDetail getApplication(String applicationName) {
+        return argoCdApplicationCatalogClient.getApplication(applicationName);
+    }
+
+    public ArgoCdApplicationDetail syncApplication(
+            String applicationName,
+            ArgoCdApplicationSyncRequest request
+    ) {
+        return argoCdApplicationCatalogClient.syncApplication(applicationName, request);
+    }
 }

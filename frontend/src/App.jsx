@@ -120,10 +120,21 @@ const PIPELINE_PREVIEWS = {
 async function fetchJson(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, options)
   if (!response.ok) {
-    throw new Error(`API returned ${response.status}`)
+    let message = `API returned ${response.status}`
+    try {
+      const error = await response.json()
+      message = error.message || message
+    } catch {
+      // Keep the HTTP status when the response has no JSON error body.
+    }
+    throw new Error(message)
   }
 
   return response.json()
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 }
 
 function base64ToArrayBuffer(value) {
@@ -174,6 +185,15 @@ function App() {
   const [lastCheckedAt, setLastCheckedAt] = useState('')
   const [applications, setApplications] = useState([])
   const [argoCdApplications, setArgoCdApplications] = useState([])
+  const [selectedArgoCdApplicationName, setSelectedArgoCdApplicationName] = useState(null)
+  const [argoCdApplicationDetail, setArgoCdApplicationDetail] = useState(null)
+  const [argoCdApplicationDetailState, setArgoCdApplicationDetailState] = useState('idle')
+  const [argoCdSyncState, setArgoCdSyncState] = useState('idle')
+  const [argoCdSyncMessage, setArgoCdSyncMessage] = useState('')
+  const [argoCdSyncOptions, setArgoCdSyncOptions] = useState({
+    prune: false,
+    dryRun: false,
+  })
   const [selectedApplicationId, setSelectedApplicationId] = useState(null)
   const [activeSection, setActiveSection] = useState('cicd')
   const [applicationDetail, setApplicationDetail] = useState(null)
@@ -651,16 +671,38 @@ function App() {
         return
       }
 
+      if (interpretation.intent === 'OPEN_ARGOCD_APPLICATION_DETAIL') {
+        const applicationName = interpretation.parameters?.applicationName
+        await loadArgoCdApplicationList()
+        await openArgoCdApplicationDetail(applicationName)
+        setAppCommandMessage(`${applicationName} application 상세 정보를 불러왔습니다.`)
+        setAppCommandState('ready')
+        return
+      }
+
+      if (interpretation.intent === 'SYNC_ARGOCD_APPLICATION') {
+        const applicationName = interpretation.parameters?.applicationName
+        await loadArgoCdApplicationList()
+        await openArgoCdApplicationDetail(applicationName)
+        await requestArgoCdSync(applicationName, { prune: false, dryRun: false })
+        setAppCommandMessage(`${applicationName} sync 요청 후 상태를 갱신했습니다.`)
+        setAppCommandState('ready')
+        return
+      }
+
       if (interpretation.intent !== 'LIST_APPLICATIONS') {
         setAppCommandMessage(interpretation.message)
         setAppCommandState('error')
         return
       }
 
-      const data = await fetchJson(interpretation.resultApiPath || '/api/argocd/applications')
-      setArgoCdApplications(data)
-      setCatalogState(data.length > 0 ? 'ready' : 'empty')
+      const data = await loadArgoCdApplicationList(
+        interpretation.resultApiPath || '/api/argocd/applications',
+      )
       setAppCommandView('list')
+      setSelectedArgoCdApplicationName(null)
+      setArgoCdApplicationDetail(null)
+      setArgoCdApplicationDetailState('idle')
       setSelectedApplicationId(null)
       setApplicationDetail(null)
 
@@ -675,6 +717,98 @@ function App() {
     } catch (error) {
       setAppCommandMessage(error.message)
       setAppCommandState('error')
+    }
+  }
+
+  async function loadArgoCdApplicationList(path = '/api/argocd/applications') {
+    setCatalogState('loading')
+    const data = await fetchJson(path)
+    setArgoCdApplications(data)
+    setCatalogState(data.length > 0 ? 'ready' : 'empty')
+    return data
+  }
+
+  async function openArgoCdApplicationDetail(applicationName) {
+    if (!applicationName) {
+      return
+    }
+
+    setSelectedArgoCdApplicationName(applicationName)
+    setArgoCdApplicationDetailState('loading')
+    setArgoCdSyncMessage('')
+    setAppCommandView('argo-detail')
+
+    try {
+      const detail = await fetchJson(`/api/argocd/applications/${encodeURIComponent(applicationName)}`)
+      setArgoCdApplicationDetail(detail)
+      setArgoCdApplicationDetailState('ready')
+      return detail
+    } catch (error) {
+      setArgoCdApplicationDetail(null)
+      setArgoCdApplicationDetailState('error')
+      setArgoCdSyncMessage(error.message)
+      throw error
+    }
+  }
+
+  async function refreshArgoCdApplicationDetail() {
+    if (!selectedArgoCdApplicationName) {
+      return
+    }
+
+    setArgoCdSyncState('refreshing')
+    setArgoCdSyncMessage('')
+    try {
+      await openArgoCdApplicationDetail(selectedArgoCdApplicationName)
+      setArgoCdSyncState('ready')
+      setArgoCdSyncMessage('최신 ArgoCD 상태를 불러왔습니다.')
+    } catch (error) {
+      setArgoCdSyncState('error')
+      setArgoCdSyncMessage(error.message)
+    }
+  }
+
+  async function requestArgoCdSync(
+    applicationName = selectedArgoCdApplicationName,
+    options = argoCdSyncOptions,
+  ) {
+    if (!applicationName) {
+      return
+    }
+
+    setSelectedArgoCdApplicationName(applicationName)
+    setAppCommandView('argo-detail')
+    setArgoCdSyncState('syncing')
+    setArgoCdSyncMessage('Sync를 요청했습니다. ArgoCD 상태를 확인하고 있습니다.')
+
+    try {
+      const accepted = await fetchJson(
+        `/api/argocd/applications/${encodeURIComponent(applicationName)}/sync`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(options),
+        },
+      )
+      setArgoCdApplicationDetail(accepted)
+      setArgoCdApplicationDetailState('ready')
+
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await delay(2000)
+        const detail = await fetchJson(
+          `/api/argocd/applications/${encodeURIComponent(applicationName)}`,
+        )
+        setArgoCdApplicationDetail(detail)
+      }
+
+      setArgoCdSyncState('ready')
+      setArgoCdSyncMessage('10초간 상태 갱신을 완료했습니다. 필요하면 Refresh를 실행하세요.')
+    } catch (error) {
+      setArgoCdSyncState('error')
+      setArgoCdSyncMessage(error.message)
+      throw error
     }
   }
 
@@ -1342,12 +1476,54 @@ function App() {
             appCommandMessage,
           )}
 
-          {(appCommandView === 'list' || appCommandView === 'create' || appCommandView === 'detail') && (
-            <div className={appCommandView === 'detail' ? 'catalog-layout' : 'catalog-layout single'}>
+          {(
+            appCommandView === 'list'
+            || appCommandView === 'create'
+            || appCommandView === 'detail'
+            || appCommandView === 'argo-detail'
+          ) && (
+            <div className={
+              appCommandView === 'detail'
+                ? 'catalog-layout'
+                : appCommandView === 'argo-detail'
+                  ? 'catalog-layout argocd-detail-layout'
+                  : 'catalog-layout single'
+            }>
               {appCommandView === 'list' && (
               <section className="catalog-panel" aria-label="ArgoCD applications">
-                {renderArgoCdApplicationList(argoCdApplications, catalogState)}
+                {renderArgoCdApplicationList(
+                  argoCdApplications,
+                  catalogState,
+                  openArgoCdApplicationDetail,
+                  selectedArgoCdApplicationName,
+                )}
               </section>
+              )}
+
+              {appCommandView === 'argo-detail' && (
+                <>
+                  <section className="catalog-panel argocd-detail-sidebar" aria-label="ArgoCD applications">
+                    {renderArgoCdApplicationList(
+                      argoCdApplications,
+                      catalogState,
+                      openArgoCdApplicationDetail,
+                      selectedArgoCdApplicationName,
+                      true,
+                    )}
+                  </section>
+                  <section className="detail-panel argocd-detail-panel" aria-label="ArgoCD application detail">
+                    {renderArgoCdApplicationDetail(
+                      argoCdApplicationDetail,
+                      argoCdApplicationDetailState,
+                      argoCdSyncOptions,
+                      setArgoCdSyncOptions,
+                      argoCdSyncState,
+                      argoCdSyncMessage,
+                      requestArgoCdSync,
+                      refreshArgoCdApplicationDetail,
+                    )}
+                  </section>
+                </>
               )}
 
               {appCommandView === 'create' && (
@@ -1527,7 +1703,13 @@ function App() {
   )
 }
 
-function renderArgoCdApplicationList(applications, catalogState) {
+function renderArgoCdApplicationList(
+  applications,
+  catalogState,
+  onSelect,
+  selectedApplicationName,
+  compact = false,
+) {
   return (
     <>
       <div className="panel-heading">
@@ -1544,7 +1726,16 @@ function renderArgoCdApplicationList(applications, catalogState) {
       {catalogState === 'ready' && (
         <div className="argocd-application-list">
           {applications.map((application) => (
-            <article className="argocd-application-card" key={`${application.argocdNamespace}-${application.name}`}>
+            <button
+              className={[
+                'argocd-application-card',
+                compact ? 'compact' : '',
+                selectedApplicationName === application.name ? 'active' : '',
+              ].filter(Boolean).join(' ')}
+              key={`${application.argocdNamespace}-${application.name}`}
+              onClick={() => onSelect(application.name).catch(() => {})}
+              type="button"
+            >
               <div className="argocd-application-main">
                 <div>
                   <p className="eyebrow">{application.project}</p>
@@ -1565,16 +1756,196 @@ function renderArgoCdApplicationList(applications, catalogState) {
                 {renderMetadata('Destination Namespace', application.destinationNamespace)}
                 {renderMetadata('Cluster', application.destinationServer)}
                 {renderMetadata('Revision', application.targetRevision)}
-                {renderMetadata('Repository', application.sourceRepoUrl)}
-                {renderMetadata('Path', application.sourcePath)}
-                {renderMetadata('Operation', application.operationPhase)}
-                {renderMetadata('Reconciled', formatDateTime(application.reconciledAt))}
+                {!compact && renderMetadata('Repository', application.sourceRepoUrl)}
+                {!compact && renderMetadata('Path', application.sourcePath)}
+                {!compact && renderMetadata('Operation', application.operationPhase)}
+                {!compact && renderMetadata('Reconciled', formatDateTime(application.reconciledAt))}
               </div>
-            </article>
+            </button>
           ))}
         </div>
       )}
     </>
+  )
+}
+
+function renderArgoCdApplicationDetail(
+  detail,
+  detailState,
+  syncOptions,
+  setSyncOptions,
+  syncState,
+  syncMessage,
+  requestSync,
+  refreshDetail,
+) {
+  if (detailState === 'loading') {
+    return <p className="muted">Loading ArgoCD application detail...</p>
+  }
+
+  if (detailState === 'error') {
+    return <p className="status-message">{syncMessage || 'Application detail is unavailable.'}</p>
+  }
+
+  if (!detail) {
+    return <p className="muted">Select an ArgoCD application.</p>
+  }
+
+  const busy = syncState === 'syncing' || syncState === 'refreshing'
+
+  return (
+    <div className="argocd-detail-content">
+      <header className="argocd-detail-header">
+        <div>
+          <p className="eyebrow">ArgoCD Application</p>
+          <h2>{detail.name}</h2>
+          <p>{detail.project} project · {detail.argocdNamespace} namespace</p>
+        </div>
+        <div className="argocd-detail-actions">
+          <button disabled={busy} onClick={refreshDetail} type="button">
+            {syncState === 'refreshing' ? 'Refreshing...' : 'Refresh'}
+          </button>
+          <button
+            className="primary-action"
+            disabled={busy}
+            onClick={() => requestSync().catch(() => {})}
+            type="button"
+          >
+            {syncState === 'syncing' && <span className="button-spinner" />}
+            {syncState === 'syncing' ? 'Syncing...' : 'Sync'}
+          </button>
+        </div>
+      </header>
+
+      {syncMessage && (
+        <p className={syncState === 'error' ? 'status-message' : 'success-message'}>
+          {syncMessage}
+        </p>
+      )}
+
+      <section className="argocd-detail-section">
+        <div className="argocd-section-heading">
+          <h3>Status</h3>
+          <span>{formatDateTime(detail.reconciledAt)}</span>
+        </div>
+        <div className="argocd-status-grid">
+          {renderStatusMetric('Sync', detail.syncStatus, statusTone(detail.syncStatus))}
+          {renderStatusMetric('Health', detail.healthStatus, statusTone(detail.healthStatus))}
+          {renderStatusMetric('Operation', detail.operationPhase, statusTone(detail.operationPhase))}
+          {renderMetadata('Revision', detail.syncRevision || 'Unknown')}
+        </div>
+        {detail.operationMessage && <p className="argocd-operation-message">{detail.operationMessage}</p>}
+      </section>
+
+      <section className="argocd-detail-section">
+        <h3>Sync options</h3>
+        <div className="argocd-sync-options">
+          {renderCheckbox('Prune', syncOptions.prune, (checked) => (
+            setSyncOptions((current) => ({ ...current, prune: checked }))
+          ))}
+          {renderCheckbox('Dry run', syncOptions.dryRun, (checked) => (
+            setSyncOptions((current) => ({ ...current, dryRun: checked }))
+          ))}
+        </div>
+      </section>
+
+      <div className="argocd-detail-columns">
+        <section className="argocd-detail-section">
+          <h3>Source</h3>
+          <div className="argocd-fact-list">
+            {renderMetadata('Repository', detail.sourceRepoUrl)}
+            {renderMetadata('Path', detail.sourcePath)}
+            {renderMetadata('Target Revision', detail.targetRevision)}
+          </div>
+        </section>
+        <section className="argocd-detail-section">
+          <h3>Destination</h3>
+          <div className="argocd-fact-list">
+            {renderMetadata('Cluster', detail.destinationServer)}
+            {renderMetadata('Namespace', detail.destinationNamespace)}
+          </div>
+        </section>
+      </div>
+
+      <section className="argocd-detail-section">
+        <div className="argocd-section-heading">
+          <h3>Images</h3>
+          <span>{detail.images.length}</span>
+        </div>
+        {detail.images.length === 0
+          ? <p className="muted">No images reported by ArgoCD.</p>
+          : (
+            <div className="image-list">
+              {detail.images.map((image) => <code key={image}>{image}</code>)}
+            </div>
+          )}
+      </section>
+
+      <section className="argocd-detail-section">
+        <div className="argocd-section-heading">
+          <h3>Managed resources</h3>
+          <span>{detail.resources.length}</span>
+        </div>
+        {detail.resources.length === 0
+          ? <p className="muted">No managed resources reported by ArgoCD.</p>
+          : (
+            <div className="argocd-resource-table" role="table" aria-label="ArgoCD managed resources">
+              <div className="argocd-resource-row argocd-resource-head" role="row">
+                <span role="columnheader">Kind</span>
+                <span role="columnheader">Name</span>
+                <span role="columnheader">Namespace</span>
+                <span role="columnheader">Sync</span>
+                <span role="columnheader">Health</span>
+                <span role="columnheader">Wave / Hook</span>
+              </div>
+              {detail.resources.map((resource) => (
+                <div
+                  className="argocd-resource-row"
+                  key={`${resource.kind}-${resource.namespace}-${resource.name}`}
+                  role="row"
+                >
+                  <span role="cell">{resource.kind}</span>
+                  <strong role="cell">{resource.name}</strong>
+                  <span role="cell">{resource.namespace || '-'}</span>
+                  <span role="cell">
+                    <strong className={`status-value ${statusTone(resource.syncStatus)}`}>
+                      {resource.syncStatus}
+                    </strong>
+                  </span>
+                  <span role="cell">
+                    <strong className={`status-value ${statusTone(resource.healthStatus)}`}>
+                      {resource.healthStatus}
+                    </strong>
+                  </span>
+                  <span role="cell">{resource.syncWave || '-'} / {resource.hook || '-'}</span>
+                </div>
+              ))}
+            </div>
+          )}
+      </section>
+
+      <section className="argocd-detail-section">
+        <div className="argocd-section-heading">
+          <h3>Conditions</h3>
+          <span>{detail.conditions.length}</span>
+        </div>
+        {detail.conditions.length === 0
+          ? <p className="muted">No active conditions.</p>
+          : (
+            <div className="argocd-condition-list">
+              {detail.conditions.map((condition, index) => (
+                <article key={`${condition.type}-${condition.lastTransitionTime}-${index}`}>
+                  <div>
+                    <strong>{condition.type}</strong>
+                    <time>{formatDateTime(condition.lastTransitionTime)}</time>
+                  </div>
+                  <p>{condition.message}</p>
+                </article>
+              ))}
+            </div>
+          )}
+      </section>
+    </div>
   )
 }
 

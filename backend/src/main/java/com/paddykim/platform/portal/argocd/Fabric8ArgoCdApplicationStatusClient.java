@@ -5,6 +5,8 @@ import io.fabric8.kubernetes.api.model.GenericKubernetesResource;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import io.fabric8.kubernetes.client.dsl.base.PatchContext;
+import io.fabric8.kubernetes.client.dsl.base.PatchType;
 import io.fabric8.kubernetes.client.dsl.base.ResourceDefinitionContext;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -88,6 +90,51 @@ public class Fabric8ArgoCdApplicationStatusClient implements ArgoCdApplicationSt
         }
     }
 
+    @Override
+    public ArgoCdApplicationDetail getApplication(String applicationName) {
+        try (KubernetesClient client = new KubernetesClientBuilder().withConfig(config()).build()) {
+            return toDetail(findApplication(client, applicationName));
+        } catch (ArgoCdApplicationNotFoundException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.warn("Unable to read ArgoCD application {}", applicationName, exception);
+            throw new ArgoCdStatusUnavailableException("Unable to read ArgoCD application", exception);
+        }
+    }
+
+    @Override
+    public ArgoCdApplicationDetail syncApplication(
+            String applicationName,
+            ArgoCdApplicationSyncRequest request
+    ) {
+        try (KubernetesClient client = new KubernetesClientBuilder().withConfig(config()).build()) {
+            findApplication(client, applicationName);
+
+            String patch = """
+                    {
+                      "operation": {
+                        "sync": {
+                          "prune": %s,
+                          "dryRun": %s
+                        }
+                      }
+                    }
+                    """.formatted(request.prune(), request.dryRun());
+
+            GenericKubernetesResource updated = client.genericKubernetesResources(applicationContext())
+                    .inNamespace(namespace)
+                    .withName(applicationName)
+                    .patch(PatchContext.of(PatchType.JSON_MERGE), patch);
+
+            return toDetail(updated);
+        } catch (ArgoCdApplicationNotFoundException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            log.warn("Unable to sync ArgoCD application {}", applicationName, exception);
+            throw new ArgoCdStatusUnavailableException("Unable to sync ArgoCD application", exception);
+        }
+    }
+
     private Config config() {
         Config config = Config.autoConfigure(null);
         config.setConnectionTimeout(2_000);
@@ -128,6 +175,26 @@ public class Fabric8ArgoCdApplicationStatusClient implements ArgoCdApplicationSt
         }
 
         return spec;
+    }
+
+    private GenericKubernetesResource findApplication(KubernetesClient client, String applicationName) {
+        GenericKubernetesResource application = client.genericKubernetesResources(applicationContext())
+                .inNamespace(namespace)
+                .withName(applicationName)
+                .get();
+
+        if (application == null) {
+            throw new ArgoCdApplicationNotFoundException(applicationName);
+        }
+        return application;
+    }
+
+    private ArgoCdApplicationDetail toDetail(GenericKubernetesResource application) {
+        return ArgoCdApplicationDetailMapper.from(
+                application.getMetadata().getName(),
+                application.getMetadata().getNamespace(),
+                application.getAdditionalProperties()
+        );
     }
 
     @SuppressWarnings("unchecked")

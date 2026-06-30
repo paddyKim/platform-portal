@@ -17,6 +17,32 @@ public class ApplicationCommandRuleSeeder implements CommandLineRunner {
     @Transactional
     public void run(String... args) {
         seed(new ApplicationCommandRule(
+                "application-sync",
+                "SYNC_ARGOCD_APPLICATION",
+                "APPLICATION_DETAIL",
+                "ArgoCD application sync를 요청합니다.",
+                "sync,동기화",
+                "sync,동기화,실행,요청,해줘,해주세요",
+                "POST",
+                "/api/argocd/applications/{applicationName}/sync",
+                0.9,
+                130
+        ));
+
+        seed(new ApplicationCommandRule(
+                "application-detail",
+                "OPEN_ARGOCD_APPLICATION_DETAIL",
+                "APPLICATION_DETAIL",
+                "ArgoCD application 상세 정보를 조회합니다.",
+                "상세,정보,detail",
+                "상세,정보,조회,보여,열어,알려,detail,show,open",
+                "GET",
+                "/api/argocd/applications/{applicationName}",
+                0.9,
+                120
+        ));
+
+        seed(new ApplicationCommandRule(
                 "application-list",
                 "LIST_APPLICATIONS",
                 "APPLICATION_LIST",

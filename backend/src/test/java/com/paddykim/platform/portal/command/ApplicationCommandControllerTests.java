@@ -70,6 +70,36 @@ class ApplicationCommandControllerTests {
     }
 
     @Test
+    void interpretsApplicationDetailCommandsAndExtractsName() throws Exception {
+        mockMvc.perform(post("/api/application-commands/interpret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "command": "platform-dev 상세 보여줘"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent", is("OPEN_ARGOCD_APPLICATION_DETAIL")))
+                .andExpect(jsonPath("$.view", is("APPLICATION_DETAIL")))
+                .andExpect(jsonPath("$.parameters.applicationName", is("platform-dev")));
+    }
+
+    @Test
+    void interpretsApplicationSyncCommandsAndExtractsName() throws Exception {
+        mockMvc.perform(post("/api/application-commands/interpret")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "command": "platform-dev sync 해줘"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent", is("SYNC_ARGOCD_APPLICATION")))
+                .andExpect(jsonPath("$.resultApiMethod", is("POST")))
+                .andExpect(jsonPath("$.parameters.applicationName", is("platform-dev")));
+    }
+
+    @Test
     void returnsUnknownForUnsupportedCommand() throws Exception {
         mockMvc.perform(post("/api/application-commands/interpret")
                         .contentType(MediaType.APPLICATION_JSON)
